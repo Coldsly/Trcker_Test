@@ -3,80 +3,269 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V5-Distributed 藍牙定位端</title>
+  <title>V5 全功能資產追蹤控制台</title>
   <style>
     body { font-family: -apple-system, sans-serif; background: #f4f6f9; padding: 20px; color: #333; margin: 0; }
-    .card { background: white; padding: 25px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); max-width: 450px; margin: 40px auto; text-align: center; }
-    h1 { font-size: 22px; color: #003366; margin-top: 0; margin-bottom: 20px; }
-    .btn { display: block; width: 100%; padding: 16px; margin: 15px 0; font-size: 16px; font-weight: bold; color: white; background: #28a745; border: none; border-radius: 10px; cursor: pointer; text-decoration: none; box-sizing: border-box; }
-    .log-box { background: #e9ecef; padding: 15px; border-radius: 8px; font-size: 14px; font-family: monospace; white-space: pre-wrap; text-align: left; line-height: 1.6; margin-top: 20px; }
-    .highlight { color: #0056b3; font-weight: bold; }
+    .container { max-width: 800px; margin: 20px auto; background: white; padding: 25px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.06); }
+    h1 { text-align: center; color: #003366; margin-top: 0; }
+    .nav-bar { display: flex; gap: 15px; justify-content: center; margin-bottom: 25px; }
+    .btn { padding: 12px 24px; font-size: 15px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; background: #6c757d; transition: 0.2s; }
+    .btn-active { background: #0056b3; }
+    .btn-green { background: #28a745; }
+    .section { display: none; margin-top: 20px; }
+    .section-active { display: block; }
+    .header-group { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; font-size: 14px; }
+    th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+    th { background-color: #f8f9fa; color: #495057; }
+    tr:nth-child(even) { background-color: #fdfdfd; }
+    /* 彈出視窗樣式 */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+    .modal-content { background: white; padding: 25px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+    .status-bar { font-size: 13px; color: #666; background: #e9ecef; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
   </style>
 </head>
 <body>
 
-<div class="card">
-  <h1>📡 V5 GitHub 獨立定位端</h1>
-  <button class="btn" id="scanBtn">🔍 搜尋附近的防丟器</button>
-  <div class="log-box" id="log">GitHub 環境準備就緒。<br>無 iframe 框架限制，請點擊按鈕開始追蹤。</div>
+<div class="container">
+  <h1>📡 V5 資產追蹤控制台</h1>
+  <div class="status-bar" id="radarStatus">雷達狀態：等待使用者啟動搜尋以喚醒藍牙核心...</div>
+  
+  <!-- 1. 雙主要切換按鈕 -->
+  <div class="nav-bar">
+    <button class="btn" id="navDeviceBtn">查看登錄設備</button>
+    <button class="btn" id="navSearchBtn">即時設備位置搜尋</button>
+  </div>
+
+  <!-- 2. 分頁面板一：已登錄設備 -->
+  <div id="deviceSection" class="section">
+    <div class="header-group">
+      <h2>📋 已登錄設備總表</h2>
+      <button class="btn btn-green" id="openAddModalBtn">➕ 新增設備</button>
+    </div>
+    <table id="deviceTable">
+      <thead>
+        <tr><th>序號</th><th>設備名稱</th><th>藍牙 Mac</th><th>登錄時間</th></tr>
+      </thead>
+      <tbody><tr><td colspan="4" style="text-align:center; color:#999;">載入中或目前無登錄資料...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- 4. 分頁面板二：即時設備位置搜尋 -->
+  <div id="searchSection" class="section">
+    <h2>🎯 設備現在位置 (雷達即時同步)</h2>
+    <table id="liveTable">
+      <thead>
+        <tr><th>序號</th><th>設備名稱</th><th>設備位置 (手機GPS)</th><th>距離</th><th>定位時間</th></tr>
+      </thead>
+      <tbody><tr><td colspan="5" style="text-align:center; color:#999;">點擊按鈕或等待自動雷達廣播捕捉...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 3. 彈出式新增設備小視窗 -->
+<div class="modal" id="addModal">
+  <div class="modal-content">
+    <h3>🔍 搜尋周邊藍牙設備</h3>
+    <p style="font-size:12px; color:#666;">請點擊下方「開始雷達搜索」以擷取空中廣播資訊：</p>
+    <button class="btn btn-green" id="startBleScanBtn" style="width:100%;">📡 開始雷達搜索 (過濾 LiSen)</button>
+    <table id="modalBleTable" style="margin-top:15px;">
+      <thead>
+        <tr><th>勾選</th><th>Mac 碼</th><th>登錄名稱 (可自訂)</th></tr>
+      </thead>
+      <tbody><tr><td colspan="3" style="text-align:center; color:#999;">尚未啟動雷達搜索...</td></tr></tbody>
+    </table>
+    <div style="display:flex; gap:10px; margin-top:20px; justify-content:flex-end;">
+      <button class="btn" id="closeModalBtn" style="background:#dc3545;">取消</button>
+      <button class="btn btn-green" id="saveRegisterBtn">💾 確認登錄</button>
+    </div>
+  </div>
 </div>
 
 <script>
   // ==================== ⚙️ 核心後端連結配置區 ====================
-  // 請將下方引號內的網址，完全替換為您剛剛在 Google GAS 部署獲得的正式 /exec 網址
-  const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzxmX2_wgRs4Y9xzx6YhyrttYE63N3GUKG0iFqn5OZNV8g621ZKNW3mnhOyMr1X7kWz/exec";
+  const GAS_API_URL = "請在此貼上您的Google_GAS_正式網址_包含exec";
   // =============================================================
 
-  let devData = { mac: "", name: "", lat: "", lng: "", distance: "" };
+  let registeredDevices = []; // 儲存從 Google 撈回來的已註冊硬體清單
+  let discoveredDevicesInModal = {}; // 暫存新增視窗中抓到的藍牙
+  let activeRadarScan = null;
 
-  document.getElementById('scanBtn').addEventListener('click', async () => {
-    const logDiv = document.getElementById('log');
-    logDiv.innerHTML = "🧭 正在喚醒手機藍牙核心...<br>請在系統視窗中選取您的防丟器。";
+  // 頁面初始化：綁定選單切換
+  document.getElementById('navDeviceBtn').addEventListener('click', () => { switchSection('deviceSection', 'navDeviceBtn'); loadRegisteredDevices(); });
+  document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); startBackgroundTrackingRadar(); });
+  document.getElementById('openAddModalBtn').addEventListener('click', () => { document.getElementById('addModal').style.display = 'flex'; discoveredDevicesInModal = {}; updateModalTable(); });
+  document.getElementById('closeModalBtn').addEventListener('click', () => { document.getElementById('addModal').style.display = 'none'; if(activeRadarScan) { activeRadarScan.stop(); activeRadarScan=null; } });
+
+  function switchSection(sectId, btnId) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('section-active'));
+    document.querySelectorAll('.nav-bar .btn').forEach(b => b.classList.remove('btn-active'));
+    document.getElementById(sectId).classList.add('section-active');
+    document.getElementById(btnId).classList.add('btn-active');
+  }
+
+  // 從 Google 試算表載入目前已登記的資產
+  async function loadRegisteredDevices() {
+    try {
+      const response = await fetch(`${GAS_API_URL}?action=getDevices`);
+      registeredDevices = await response.json();
+      const tbody = document.querySelector('#deviceTable tbody');
+      tbody.innerHTML = '';
+      
+      if(registeredDevices.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#999;">目前無登錄資料，請點擊右上方新增。</td></tr>`;
+        return;
+      }
+      registeredDevices.forEach((dev, index) => {
+        tbody.innerHTML += `<tr><td>${index+1}</td><td>${dev.name}</td><td>${dev.mac}</td><td>${new Date(dev.time).toLocaleString()}</td></tr>`;
+      });
+    } catch(e) { console.log("載入失敗: " + e.message); }
+  }
+
+  // 彈出視窗：雷達監聽廣播 (無感捕捉，不要求手動連線)
+  document.getElementById('startBleScanBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('startBleScanBtn');
+    btn.innerText = "🛑 雷達正在強力搜索中...";
+    btn.style.background = "#dc3545";
+    
+    try {
+      activeRadarScan = await navigator.bluetooth.requestLEScan({ filters: [{ namePrefix: 'LiSen' }], keepRepeatedDevices: true });
+      navigator.bluetooth.addEventListener('advertisementreceived', event => {
+        const mac = event.device.id;
+        if (!discoveredDevicesInModal[mac]) {
+          discoveredDevicesInModal[mac] = { mac: mac, defaultName: event.device.name || "LiSen_Asset" };
+          updateModalTable();
+        }
+      });
+    } catch(e) { alert("無法啟動藍牙雷達: " + e.message + "\n請確保使用的是安卓Chrome或iPhone Bluefy App！"); }
+  });
+
+  function updateModalTable() {
+    const tbody = document.querySelector('#modalBleTable tbody');
+    tbody.innerHTML = '';
+    const keys = Object.keys(discoveredDevicesInModal);
+    if(keys.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#999;">雷達監聽中... 請將開機的防丟器靠近手機。</td></tr>`;
+      return;
+    }
+    keys.forEach(k => {
+      const d = discoveredDevicesInModal[k];
+      tbody.innerHTML += `<tr>
+        <td><input type="checkbox" value="${d.mac}" id="chk_${d.mac}"></td>
+        <td>` + d.mac + `</td>
+        <td><input type="text" placeholder="請輸入自訂用途" id="name_${d.mac}" value="${d.defaultName}"></td>
+      </tr>`;
+    });
+  }
+
+  // 點擊儲存：登錄打回 Google 試算表
+  document.getElementById('saveRegisterBtn').addEventListener('click', async () => {
+    const checkboxes = document.querySelectorAll('#modalBleTable input[type="checkbox"]:checked');
+    if(checkboxes.length === 0) { alert("請先勾選要登錄的設備！"); return; }
+    
+    for (let chk of checkboxes) {
+      const mac = chk.value;
+      const inputName = document.getElementById(`name_${mac}`).value || "未命名資產";
+      const formData = new URLSearchParams();
+      formData.append("mac", mac);
+      formData.append("name", inputName);
+      
+      await fetch(`${GAS_API_URL}?action=register`, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData.toString() });
+    }
+    alert("設備成功登錄雲端庫！");
+    document.getElementById('addModal').style.display = 'none';
+    if(activeRadarScan) { activeRadarScan.stop(); activeRadarScan=null; }
+    loadRegisteredDevices();
+  });
+
+  // 5. & 6. 核心精華：開啟後 5 分鐘全自動背景追蹤定位雷達
+  let trackingInterval = null;
+  async function startBackgroundTrackingRadar() {
+    if (trackingInterval) return; // 防止重複啟動
+    document.getElementById('radarStatus').innerText = "雷達狀態：🟢 背景動態雷達追蹤已完全啟動，每 5 分鐘將自動更新一次。";
+    
+    // 開啟時立刻執行第一次
+    executeRadarTrackingCycle();
+    
+    // 設定 5 分鐘自動循環計時器 (5 * 60 * 1000 毫秒)
+    trackingInterval = setInterval(() => {
+      executeRadarTrackingCycle();
+    }, 300000);
+  }
+
+  async function executeRadarTrackingCycle() {
+    console.log("觸發 5 分鐘自動背景更新定位週期...");
+    await loadRegisteredDevices(); // 先確保拿到最新登錄清單
+    
+    // 初始化即時表格狀態，預設都為「未搜尋到藍牙，列出最後登錄時間」
+    const tbody = document.querySelector('#liveTable tbody');
+    tbody.innerHTML = '';
+    
+    if (registeredDevices.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#999;">目前無任何登錄設備可供定位搜尋。</td></tr>`;
+      return;
+    }
+
+    // 先用舊資料填補表格 (未搜索到時，預設顯示最後登錄時間)
+    registeredDevices.forEach((dev, index) => {
+      tbody.innerHTML += `<tr id="live_tr_${dev.mac.replace(/:/g, '')}">
+        <td>${index+1}</td>
+        <td>${dev.name}</td>
+        <td style="color:#dc3545;">⚠️ 搜尋範圍外</td>
+        <td>--</td>
+        <td style="font-size:12px;color:#666;">最後登錄:${new Date(dev.time).toLocaleTimeString()}</td>
+      </tr>`;
+    });
 
     try {
-      // 呼叫原生 Web Bluetooth API (在 GitHub Pages 頂層網頁下 100% 獲放行)
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: [0x180f] 
-      });
-
-      devData.mac = device.id;
-      devData.name = device.name || "未命名防丟器";
-      
-      logDiv.innerHTML = `⚡ <b>已捕捉設備：</b><br>名稱: <span class='highlight'>${devData.name}</span><br>ID: ${devData.mac}<br><br>🌐 正在要求高精度 GPS 定位...`;
-      
-      // 自動調用手機定位
+      // 喚醒手機 GPS 定位
       navigator.geolocation.getCurrentPosition(async (pos) => {
-        devData.lat = pos.coords.latitude;
-        devData.lng = pos.coords.longitude;
-        devData.distance = (Math.random() * 2 + 1).toFixed(1); // 估算距離
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
         
-        logDiv.innerHTML = `📡 <b>本端採集完成！</b><br>名稱: ${devData.name}<br>座標: ${devData.lat}, ${devData.lng}<br><br>🚀 正在跨網域發送至 Google 雲端試算表...`;
+        // 啟動單次短暫雷達監聽廣播 (持續 12 秒撈取空中的 MAC)
+        const trackerScan = await navigator.bluetooth.requestLEScan({ filters: [{ namePrefix: 'LiSen' }], keepRepeatedDevices: false });
         
-        // 關鍵修正：使用標準 fetch POST 跨網域拋送 JSON 數據給 Google API
-        try {
-          const response = await fetch(GAS_API_URL, {
-            method: 'POST',
-            mode: 'no-cors', // 使用無歷史跨網域安全模式，確保拋送絕對成功
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(devData)
-          });
+        navigator.bluetooth.addEventListener('advertisementreceived', async event => {
+          const foundMac = event.device.id;
           
-          logDiv.innerHTML = `🎉 <b>資料已成功拋出！</b><br><br><b>登錄狀態：</b><br>設備：${devData.name}<br>最新座標：${devData.lat}, ${devData.lng}<br>預估距離：${devData.distance}m<br><br>👉 請開啟您的 Google 試算表檢視最新即時地圖點位！`;
-          
-        } catch (fetchErr) {
-          logDiv.innerHTML = `❌ 拋送給 Google 失敗: ${fetchErr.message}`;
-        }
-          
-      }, (err) => {
-        logDiv.innerHTML = `❌ GPS 定位擷取失敗。<br>原因: ${err.message}<br>請確認手機已開啟位置服務。`;
-      }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+          // 比對這個發現的 MAC 是否在我們的註冊清單中
+          const matchedDev = registeredDevices.find(d => d.mac === foundMac);
+          if (matchedDev) {
+            const distance = Math.pow(10, ((-69 - event.rssi) / (10 * 2))).toFixed(1);
+            const rowId = `live_tr_${foundMac.replace(/:/g, '')}`;
+            const targetTr = document.getElementById(rowId);
+            
+            if (targetTr) {
+              // 即時更新網頁畫面的表格列，顯示最新手機 GPS
+              targetTr.innerHTML = `
+                <td>#</td>
+                <td><b>${matchedDev.name}</b></td>
+                <td>🍏 ${lat.toFixed(5)}, ${lng.toFixed(5)}</td>
+                <td><span style="color:#28a745;font-weight:bold;">${distance}m</span></td>
+                <td>⏱️ ${new Date().toLocaleTimeString()}</td>
+              `;
+            }
 
-    } catch (e) {
-      logDiv.innerHTML = `❌ 藍牙連線失敗: ${e.message}<br>提示：若使用 iPhone，請確認是否正使用 Bluefy App 開啟此網頁。`;
-    }
-  });
+            // 同步拋送數據給 Google Apps Script 覆寫 Live_Status 分頁
+            const formData = new URLSearchParams();
+            formData.append("mac", foundMac);
+            formData.append("name", matchedDev.name);
+            formData.append("lat", lat);
+            formData.append("lng", lng);
+            formData.append("distance", distance);
+
+            fetch(`${GAS_API_URL}?action=updateLocation`, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData.toString() });
+          }
+        });
+
+        // 12秒後自動關閉本次雷達監聽，節省手機電量，靜待下個5分鐘週期
+        setTimeout(() => { trackerScan.stop(); console.log("本次週期雷達監聽結束，轉入靜默。"); }, 12000);
+
+      }, (err) => { console.log("GPS 獲取失敗: " + err.message); }, { enableHighAccuracy: true });
+
+    } catch (e) { console.log("背景雷達啟動受阻: " + e.message); }
+  }
 </script>
-
 </body>
 </html>
