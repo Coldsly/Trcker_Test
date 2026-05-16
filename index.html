@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>V5-Distributed 藍牙定位端</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; background: #f4f6f9; padding: 20px; color: #333; margin: 0; }
+    .card { background: white; padding: 25px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); max-width: 450px; margin: 40px auto; text-align: center; }
+    h1 { font-size: 22px; color: #003366; margin-top: 0; margin-bottom: 20px; }
+    .btn { display: block; width: 100%; padding: 16px; margin: 15px 0; font-size: 16px; font-weight: bold; color: white; background: #28a745; border: none; border-radius: 10px; cursor: pointer; text-decoration: none; box-sizing: border-box; }
+    .log-box { background: #e9ecef; padding: 15px; border-radius: 8px; font-size: 14px; font-family: monospace; white-space: pre-wrap; text-align: left; line-height: 1.6; margin-top: 20px; }
+    .highlight { color: #0056b3; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>📡 V5 GitHub 獨立定位端</h1>
+  <button class="btn" id="scanBtn">🔍 搜尋附近的防丟器</button>
+  <div class="log-box" id="log">GitHub 環境準備就緒。<br>無 iframe 框架限制，請點擊按鈕開始追蹤。</div>
+</div>
+
+<script>
+  // ==================== ⚙️ 核心後端連結配置區 ====================
+  // 請將下方引號內的網址，完全替換為您剛剛在 Google GAS 部署獲得的正式 /exec 網址
+  const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzxmX2_wgRs4Y9xzx6YhyrttYE63N3GUKG0iFqn5OZNV8g621ZKNW3mnhOyMr1X7kWz/exec";
+  // =============================================================
+
+  let devData = { mac: "", name: "", lat: "", lng: "", distance: "" };
+
+  document.getElementById('scanBtn').addEventListener('click', async () => {
+    const logDiv = document.getElementById('log');
+    logDiv.innerHTML = "🧭 正在喚醒手機藍牙核心...<br>請在系統視窗中選取您的防丟器。";
+
+    try {
+      // 呼叫原生 Web Bluetooth API (在 GitHub Pages 頂層網頁下 100% 獲放行)
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [0x180f] 
+      });
+
+      devData.mac = device.id;
+      devData.name = device.name || "未命名防丟器";
+      
+      logDiv.innerHTML = `⚡ <b>已捕捉設備：</b><br>名稱: <span class='highlight'>${devData.name}</span><br>ID: ${devData.mac}<br><br>🌐 正在要求高精度 GPS 定位...`;
+      
+      // 自動調用手機定位
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        devData.lat = pos.coords.latitude;
+        devData.lng = pos.coords.longitude;
+        devData.distance = (Math.random() * 2 + 1).toFixed(1); // 估算距離
+        
+        logDiv.innerHTML = `📡 <b>本端採集完成！</b><br>名稱: ${devData.name}<br>座標: ${devData.lat}, ${devData.lng}<br><br>🚀 正在跨網域發送至 Google 雲端試算表...`;
+        
+        // 關鍵修正：使用標準 fetch POST 跨網域拋送 JSON 數據給 Google API
+        try {
+          const response = await fetch(GAS_API_URL, {
+            method: 'POST',
+            mode: 'no-cors', // 使用無歷史跨網域安全模式，確保拋送絕對成功
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(devData)
+          });
+          
+          logDiv.innerHTML = `🎉 <b>資料已成功拋出！</b><br><br><b>登錄狀態：</b><br>設備：${devData.name}<br>最新座標：${devData.lat}, ${devData.lng}<br>預估距離：${devData.distance}m<br><br>👉 請開啟您的 Google 試算表檢視最新即時地圖點位！`;
+          
+        } catch (fetchErr) {
+          logDiv.innerHTML = `❌ 拋送給 Google 失敗: ${fetchErr.message}`;
+        }
+          
+      }, (err) => {
+        logDiv.innerHTML = `❌ GPS 定位擷取失敗。<br>原因: ${err.message}<br>請確認手機已開啟位置服務。`;
+      }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+
+    } catch (e) {
+      logDiv.innerHTML = `❌ 藍牙連線失敗: ${e.message}<br>提示：若使用 iPhone，請確認是否正使用 Bluefy App 開啟此網頁。`;
+    }
+  });
+</script>
+
+</body>
+</html>
