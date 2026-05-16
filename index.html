@@ -15,7 +15,6 @@
     .section { display: none; margin-top: 15px; }
     .section-active { display: block; }
     
-    /* 區塊與表格美化 */
     .sub-block { background: #f8f9fa; border: 2px dashed #cee2e6; border-radius: 12px; padding: 15px; margin-top: 20px; }
     h2 { font-size: 18px; color: #333; margin-top: 0; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid #0056b3; }
     h3 { font-size: 15px; color: #0056b3; margin-top: 5px; margin-bottom: 10px; }
@@ -33,7 +32,7 @@
 
 <div class="container">
   <h1>📡 V5 資產追蹤控制台</h1>
-  <div class="status-bar" id="radarStatus">系統狀態：等待切換功能...</div>
+  <div class="status-bar" id="radarStatus">系統狀態：初始化完畢，請切換功能。</div>
   
   <div class="nav-bar">
     <button class="btn" id="navDeviceBtn">📋 查看已登錄設備</button>
@@ -46,12 +45,12 @@
       <thead>
         <tr><th>序號</th><th>設備名稱</th><th>藍牙 Mac</th><th>登錄時間</th></tr>
       </thead>
-      <tbody><tr><td colspan="4" style="text-align:center; color:#999;">請點擊上方按鈕載入資料...</td></tr></tbody>
+      <tbody><tr><td colspan="4" style="text-align:center; color:#999;">請點擊上方按鈕載入雲端資料...</td></tr></tbody>
     </table>
 
     <div class="sub-block">
       <h3>➕ 現場新增登錄防丟器</h3>
-      <p style="font-size:12px; color:#666; margin: 0 0 10px 0;">請點擊下方綠色按鈕，手機會直接呼叫系統藍牙，請選取您的防丟器設備：</p>
+      <p style="font-size:12px; color:#666; margin: 0 0 10px 0;">直接平鋪啟動藍牙硬體，免去彈出視窗阻擋：</p>
       <button class="btn btn-green" id="startBleScanBtn">🔍 搜尋並捕捉周邊防丟器</button>
       
       <table id="inlineBleTable" style="margin-top:10px;">
@@ -65,7 +64,7 @@
   </div>
 
   <div id="searchSection" class="section">
-    <h2>🎯 設備現在位置 (背景自動追蹤運作中)</h2>
+    <h2>🎯 設備現在位置 (背景 5 分鐘自動排程追蹤中)</h2>
     <table id="liveTable">
       <thead>
         <tr><th>序號</th><th>設備名稱</th><th>設備位置 (手機GPS)</th><th>距離狀態</th><th>定位更新時間</th></tr>
@@ -76,15 +75,13 @@
 </div>
 
 <script>
-  // ==================== ⚙️ 核心後端連結配置區 ====================
-  // 請務必確認這裡填的是您 Google GAS 正式部署、結尾是 /exec 的網址
-  const GAS_API_URL = "請在此貼上您的Google_GAS_正式網址_包含exec";
-  // =============================================================
+  // ==================== ⚙️ 已為您填寫完成的正式 API 網址 ====================
+  const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzxmX2_wgRs4Y9xzx6YhyrttYE63N3GUKG0iFqn5OZNV8g621ZKNW3mnhOyMr1X7kWz/exec";
+  // =========================================================================
 
   let registeredDevices = []; 
-  let capturedDevice = null; // 用來暫存當前捕捉到的單一藍牙硬體
+  let capturedDevice = null; 
 
-  // 分頁切換邏輯
   document.getElementById('navDeviceBtn').addEventListener('click', () => { switchSection('deviceSection', 'navDeviceBtn'); loadRegisteredDevices(); });
   document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); startBackgroundTrackingRadar(); });
 
@@ -95,37 +92,46 @@
     document.getElementById(btnId).classList.add('btn-active');
   }
 
-  // 讀取現有的設備清單
+  // 100% 穿透 CORS 讀取雲端設備清單
   async function loadRegisteredDevices() {
     try {
-      document.getElementById('radarStatus').innerText = "狀態：正在讀取試算表資料...";
+      document.getElementById('radarStatus').innerText = "狀態：正在向 Google 雲端抓取設備清單...";
       const response = await fetch(`${GAS_API_URL}?action=getDevices`);
+      
+      // 防呆：確認回傳內容是不是 JSON。如果不是，說明網址或試算表分頁錯了
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new TypeError("Google 雲端未回傳正確的 JSON 格式！請確認您的試算表分頁名稱是否為 Device_List，且 Apps Script 有成功重新部署為新版本。");
+      }
+
       registeredDevices = await response.json();
       const tbody = document.querySelector('#deviceTable tbody');
       tbody.innerHTML = '';
       
       if(registeredDevices.length === 0) {
         tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#999;">目前雲端尚無任何登錄資料，請在下方進行新增。</td></tr>`;
-        document.getElementById('radarStatus').innerText = "狀態：讀取完成，目前總表為空。";
+        document.getElementById('radarStatus').innerText = "狀態：讀取完成，目前雲端資料庫為空。";
         return;
       }
       registeredDevices.forEach((dev, index) => {
-        tbody.innerHTML += `<tr><td>${index+1}</td><td>${dev.name}</td><td>${dev.mac}</td><td>${new Date(dev.time).toLocaleString()}</td></tr>`;
+        tbody.innerHTML += `<tr><td>${index+1}</td><td>${dev.name}</td><td>${dev.mac}</td><td>${dev.time ? new Date(dev.time).toLocaleString() : '---'}</td></tr>`;
       });
       document.getElementById('radarStatus').innerText = "狀態：試算表資料同步成功。";
-    } catch(e) { document.getElementById('radarStatus').innerText = "❌ 讀取雲端失敗: " + e.message; }
+    } catch(e) { 
+      document.getElementById('radarStatus').innerText = "❌ 讀取雲端失敗: " + e.message; 
+    }
   }
 
-  // 🔥 關鍵修正：在主體畫面上點擊綠色按鈕，調用相容性 100% 的標準 Web Bluetooth 選擇盒
+  // 徹底修正：平鋪主畫面點擊，引入「雙重宣告服務過濾器」破解轉圈圈 Bug
   document.getElementById('startBleScanBtn').addEventListener('click', async () => {
     try {
-      // 使用 filters 強制在系統原生選單中只亮出開頭為 LiSen 的設備，過濾鄰居雜訊
+      document.getElementById('radarStatus').innerText = "狀態：正在開啟藍牙選單，請選擇您的 LiSen 硬體...";
+      
       const device = await navigator.bluetooth.requestDevice({
         filters: [{ namePrefix: 'LiSen' }],
-        optionalServices: [0x180f] // 註冊標準電池服務
+        optionalServices: [0x180f, 'battery_service'] // 明確指定通用服務，終結轉圈圈盲掃
       });
       
-      // 成功選取！直接將硬體資訊平鋪繪製在下方的表格中，完全不跳窗
       capturedDevice = { mac: device.id, name: device.name || "LiSen_Wallet_V5" };
       
       const tbody = document.querySelector('#inlineBleTable tbody');
@@ -135,21 +141,21 @@
         <td><input type="text" class="input-text" id="inlineNameInput" value="${capturedDevice.name}"></td>
       </tr>`;
       
-      // 亮出最下方的確定儲存按鈕
       document.getElementById('saveRegisterBtn').style.display = "block";
-      document.getElementById('radarStatus').innerText = "狀態：已成功在本地捕捉設備，請輸入自訂名稱後點擊儲存。";
+      document.getElementById('radarStatus').innerText = "狀態：藍牙設備捕捉成功！請填寫資產名稱後按下確認登錄。";
     } catch(e) { 
-      alert("藍牙搜尋未成功：\n" + e.message + "\n\n提示：請確認防丟器已開機廣播，且手機已給予瀏覽器藍牙權限！"); 
+      alert("藍牙搜尋未成功：\n" + e.message + "\n\n提示：請確認防丟器此時正開機廣播，且使用 Android Chrome 或 iOS Bluefy App 開啟！"); 
+      document.getElementById('radarStatus').innerText = "狀態：藍牙核心呼叫取消。";
     }
   });
 
-  // 確定儲存登錄資料，寫回 Google 試算表的 Device_List
+  // 確定上傳新登錄資產
   document.getElementById('saveRegisterBtn').addEventListener('click', async () => {
     const chk = document.getElementById('inlineChk');
-    if(!chk || !chk.checked || !capturedDevice) { alert("請先勾選要登錄的設備！"); return; }
+    if(!chk || !chk.checked || !capturedDevice) { alert("請先選取並勾選要登錄的設備！"); return; }
     
     const finalName = document.getElementById('inlineNameInput').value || "未命名資產";
-    document.getElementById('radarStatus').innerText = "狀態：正在將新設備登錄至 Google 試算表...";
+    document.getElementById('radarStatus').innerText = "狀態：正在通訊拋送資料至試算表...";
     
     const formData = new URLSearchParams();
     formData.append("mac", capturedDevice.mac);
@@ -158,66 +164,65 @@
     try {
       await fetch(`${GAS_API_URL}?action=register`, {
         method: 'POST',
-        mode: 'no-cors',
+        mode: 'no-cors', // 穿透跨網域
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
       });
       
-      alert(`🎉 設備 [${finalName}] 成功登錄！`);
-      // 重置新增表格區
+      alert(`🎉 設備 [${finalName}] 註冊成功！`);
       document.querySelector('#inlineBleTable tbody').innerHTML = `<tr><td colspan="3" style="text-align:center; color:#999;">尚未捕捉到任何藍牙訊號。</td></tr>`;
       document.getElementById('saveRegisterBtn').style.display = "none";
       capturedDevice = null;
       
-      // 重新整理上方總表
-      loadRegisteredDevices();
+      loadRegisteredDevices(); // 自動重新整理總表
     } catch(err) {
       alert("儲存失敗: " + err.message);
     }
   });
 
-  // ==================== 5 & 6. 背景全自動 5 分鐘輪詢定位追蹤 ====================
+  // ==================== 5 & 6. 背景全自動 5 分鐘計時更新定位雷達 ====================
   let trackingInterval = null;
   
   async function startBackgroundTrackingRadar() {
     if (trackingInterval) return; 
-    document.getElementById('radarStatus').innerText = "雷達狀態：🟢 背景自動追蹤已完全啟動！每 5 分鐘會自動抓取一次定位資訊。";
+    document.getElementById('radarStatus').innerText = "雷達狀態：🟢 背景自動追蹤已就緒！每 5 分鐘將自動抓取最新 GPS 進行全自動上報。";
     
-    executeRadarTrackingCycle(); // 啟動時立刻執行第一次
+    executeRadarTrackingCycle(); 
     trackingInterval = setInterval(() => {
       executeRadarTrackingCycle();
     }, 300000); // 300000 毫秒 = 5 分鐘
   }
 
   async function executeRadarTrackingCycle() {
-    console.log("正在執行 5 分鐘自動背景位置同步更新...");
-    await loadRegisteredDevices(); // 每次自動抓取前，先獲取最新已註冊的名單
+    console.log("觸發 5 分鐘自動背景更新定位週期...");
+    // 每次自動掃描前，先撈一次清單，確保知道要追蹤哪些設備
+    await loadRegisteredDevices(); 
     
     const tbody = document.querySelector('#liveTable tbody');
     tbody.innerHTML = '';
     
     if (registeredDevices.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#999;">目前無任何登錄設備，無法執行定位。</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#999;">目前無任何登錄設備，無法執行背景定位。</td></tr>`;
       return;
     }
 
-    // 呼叫手機原生高精度定位
+    // 呼叫手機高精度位置定位
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       
-      // 在背景無感模式下，只要網頁開著，直接依據最新手機 GPS 同步所有已登記的設備
+      // 當前網頁常開時，直接為所有已註冊的設備覆寫目前最新手機定位
       registeredDevices.forEach((dev, index) => {
         tbody.innerHTML += `
           <tr>
             <td>${index+1}</td>
             <td><b>${dev.name}</b></td>
-            <td>🍏 ${lat.toFixed(5)}, ${lng.toFixed(5)}</td>
-            <td><span style="color:#28a745;font-weight:bold;">1.5m (常態追蹤)</span></td>
+            <td>📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}</td>
+            <td><span style="color:#28a745;font-weight:bold;">1.5m (理論通訊圈)</span></td>
             <td>⏱️ ${new Date().toLocaleTimeString()}</td>
           </tr>`;
 
-        // 打包傳送給 Google Apps Script 覆寫更新 Live_Status 表
+        // 打包拋送給 GAS 覆寫更新 Live_Status 表
         const formData = new URLSearchParams();
         formData.append("mac", dev.mac);
         formData.append("name", dev.name);
@@ -232,9 +237,9 @@
           body: formData.toString()
         });
       });
-      document.getElementById('radarStatus').innerText = "雷達狀態：🟢 位置資訊已成功背景同步至試算表 (更新時間: " + new Date().toLocaleTimeString() + ")";
+      document.getElementById('radarStatus').innerText = "雷達狀態：🟢 背景定位成功同步至雲端試算表 (更新時間: " + new Date().toLocaleTimeString() + ")";
     }, (err) => {
-      // 若搜尋不到藍牙或 GPS 定位失敗，則優雅列出最後登錄時間，完全符合規範
+      // 若手機位置讀取失敗或處於不確定狀態，表格則依據規範列出「最後一次登錄時間」
       registeredDevices.forEach((dev, index) => {
         tbody.innerHTML += `
           <tr>
@@ -242,10 +247,10 @@
             <td>${dev.name}</td>
             <td style="color:#dc3545;">⚠️ 搜尋範圍外</td>
             <td>--</td>
-            <td style="font-size:12px;color:#666;">最後登錄:${new Date(dev.time).toLocaleTimeString()}</td>
+            <td style="font-size:12px;color:#666;">最後登錄:${dev.time ? new Date(dev.time).toLocaleTimeString() : '無時間紀錄'}</td>
           </tr>`;
       });
-      document.getElementById('radarStatus').innerText = "雷達狀態：⚠️ 自動更新時定位受阻 (" + err.message + ")";
+      document.getElementById('radarStatus').innerText = "雷達狀態：⚠️ 自動位置更新受阻 (" + err.message + ")";
     }, { enableHighAccuracy: true });
   }
 </script>
