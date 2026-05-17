@@ -48,7 +48,7 @@
     <h3>已登錄設備清單</h3>
     <table id="deviceTable">
       <thead>
-        <tr><th>序號</th><th>設備名稱</th><th>專案編號</th><th>設備編號</th><th>Mac碼</th><th>登錄時間</th></tr>
+        <tr><th>序號</th><th>設備名稱</th><th>專案編號</th><th>設備編號</th><th>綁定識別碼</th><th>最後動態時間</th></tr>
       </thead>
       <tbody>
         <tr><td colspan="6" style="text-align:center; color:#999;">正在載入雲端名冊...</td></tr>
@@ -58,10 +58,10 @@
     <button class="btn btn-green" id="showBleScanBlockBtn">➕ 新增登錄設備</button>
 
     <div class="sub-block" id="bleScanBlock" style="display:none;">
-      <h4>周邊未登錄設備 (15秒雷達鎖定不清除，非符合名稱亦一併列出)</h4>
+      <h4>周邊未登錄設備 (15秒雷達鎖定，支援同名機具並列識別)</h4>
       <table id="inlineBleTable">
         <thead>
-          <tr><th>勾選</th><th>設備名稱 (可現場修改)</th><th>專案編號 (可現場修改)</th><th>設備編號 (可現場修改)</th><th>Mac碼/唯一識別碼</th></tr>
+          <tr><th>勾選</th><th>設備名稱</th><th>專案編號</th><th>設備編號</th><th>藍牙臨時ID</th></tr>
         </thead>
         <tbody>
           <tr><td colspan="5" style="text-align:center; color:#999;">尚未啟動藍牙雷達。</td></tr>
@@ -97,15 +97,20 @@
 </div>
 
 <script>
-  // 💡 關鍵更換點：填入您的最新 GAS Web API 網址
+  // 💡 請在此處更換為您發布新版本後的 GAS 網址
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxleCZ7WmEhgxE0eh9yY9pjKTIhEajVByyQyYNNm2GNI5gmXuiS9nG9QAm7Vno4G0Bb/exec";
   
   let masterDevices = []; 
   let liveStatusDevices = [];
-  let radarCapturedMap = new Map(); // 全域鎖定 Map，不清除任何紀錄
+  let radarCapturedMap = new Map(); 
   let mapInstance = null;
   let mapMarkers = [];
   let autoRefreshTimer = null;
+
+  function getNowStr() {
+    const d = new Date();
+    return `${d.getFullYear()}/${("0"+(d.getMonth()+1)).slice(-2)}/${("0"+d.getDate()).slice(-2)} ${("0"+d.getHours()).slice(-2)}:${("0"+d.getMinutes()).slice(-2)}:${("0"+d.getSeconds()).slice(-2)}`;
+  }
 
   document.getElementById('navDeviceBtn').addEventListener('click', () => { switchSection('deviceSection', 'navDeviceBtn'); loadRegisteredDevices(); });
   document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); initLeafletMap(); loadLiveStatusAndScan(); startAutoTimer(); });
@@ -119,13 +124,11 @@
 
   window.onload = () => { loadRegisteredDevices(); };
 
-  // ==================== 讀取總名冊 (JSONP 通道) ====================
   function loadRegisteredDevices() {
     document.getElementById('systemStatus').innerText = "系統狀態：正在由雲端讀取名冊...";
     const script = document.createElement('script');
     script.src = `${GAS_API_URL}?action=getDevices&callback=processMasterDevices`;
-    document.body.appendChild(script);
-    script.onload = () => script.remove();
+    document.body.appendChild(script); script.onload = () => script.remove();
   }
 
   window.processMasterDevices = function(data) {
@@ -135,59 +138,58 @@
   }
 
   function renderMasterTable(filterProj) {
-    const tbody = document.querySelector('#deviceTable tbody');
-    tbody.innerHTML = '';
+    const tbody = document.querySelector('#deviceTable tbody'); tbody.innerHTML = '';
     let seq = 1;
     masterDevices.forEach(dev => {
       if (filterProj !== "ALL" && dev.proj !== filterProj) return;
-      tbody.innerHTML += `<tr><td>${seq++}</td><td><b>${dev.name}</b></td><td>${dev.proj}</td><td>${dev.dev}</td><td><code>${dev.mac}</code></td><td>${dev.time?new Date(dev.time).toLocaleString():'---'}</td></tr>`;
+      tbody.innerHTML += `<tr><td>${seq++}</td><td><b>${dev.name}</b></td><td>${dev.proj}</td><td>${dev.dev}</td><td><code>${dev.mac}</code></td><td>${dev.time}</td></tr>`;
     });
     document.getElementById('systemStatus').innerText = "系統狀態：雲端名冊同步完成。";
   }
 
-  // ==================== ➕ 15秒雷達鎖定 + 開放輸入修正 (解決問題1、2、3) ====================
+  // ==================== ➕ 15秒雷達點名與複合主鍵並列顯示 ====================
   document.getElementById('showBleScanBlockBtn').addEventListener('click', async () => {
     document.getElementById('bleScanBlock').style.display = "block";
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
-      alert("瀏覽器不支援 Web Bluetooth 雷達！請參閱附錄開啟 Flags。");
-      return;
+      alert("瀏覽器不支援藍牙雷達功能！"); return;
     }
     try {
-      radarCapturedMap.clear(); // 重新整理新一輪
+      radarCapturedMap.clear();
       updateInlineBleUI();
-      document.getElementById('systemStatus').innerText = "雷達狀態：正在捕捉周邊訊號，15秒內不論硬體是否休眠，紀錄一律保留...";
+      document.getElementById('systemStatus').innerText = "雷達狀態：正在清點周邊標籤訊號（同名設備將依欄位並列呈現）...";
       
       const scan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true, keepRepeatedDevices: true });
       
       const onAdv = (event) => {
-        let rawName = event.device.name || event.device.id || "未知藍牙設備";
-        let mac = (event.device.id && event.device.id.length > 2) ? event.device.id.toUpperCase() : "UNKNOWN_MAC";
+        let rawName = event.device.name || "未知設備";
+        let tempId = event.device.id ? event.device.id.toUpperCase() : "WAVE_ID";
         
-        // 💡 修正問題 2 & 3：不論符不符合格式，一律准許放行，且完整保留字串不截斷
         if (rawName.includes('#')) {
           let parts = rawName.split('#');
-          if (parts.length >= 4) {
-            mac = parts[3].toUpperCase().trim();
-            if(!radarCapturedMap.has(mac)) {
-              radarCapturedMap.set(mac, { name: parts[0], proj: parts[1], dev: parts[2], mac: mac });
+          if (parts.length >= 3) {
+            let dName = parts[0].trim();
+            let pId = parts[1].trim();
+            let eId = parts[2].trim();
+            // 💡 核心修正 1：複合鍵主鍵生成。即使名稱（dName）相同，但只要專案、編號、臨時ID有任一不同，就視為獨立個體並列展示！
+            let compositeKey = `${dName}_${pId}_${eId}_${tempId}`;
+            if(!radarCapturedMap.has(compositeKey)) {
+              radarCapturedMap.set(compositeKey, { name: dName, proj: pId, dev: eId, tempId: tempId });
             }
           }
-        } else {
-          // 路人設備或未初始化的設備，給予空輸入框提示
-          if(!radarCapturedMap.has(mac)) {
-            radarCapturedMap.set(mac, { name: rawName, proj: "未設定專案", dev: "未設定編號", mac: mac });
+        } else if (rawName !== "未知設備") {
+          let compositeKey = `${rawName}_未設定專案_未設定編號_${tempId}`;
+          if(!radarCapturedMap.has(compositeKey)) {
+            radarCapturedMap.set(compositeKey, { name: rawName, proj: "未設定專案", dev: "未設定編號", tempId: tempId });
           }
         }
-        // 💡 修正問題 1：每次進封包只往 Map 累加，並重新全量繪製，舊紀錄絕不清除！
         updateInlineBleUI();
       };
 
       navigator.bluetooth.addEventListener('advertisementreceived', onAdv);
       
       setTimeout(() => {
-        scan.stop();
-        navigator.bluetooth.removeEventListener('advertisementreceived', onAdv);
-        document.getElementById('systemStatus').innerText = `掃描窗口關閉。共鎖定周邊 ${radarCapturedMap.size} 個藍牙實體。`;
+        scan.stop(); navigator.bluetooth.removeEventListener('advertisementreceived', onAdv);
+        document.getElementById('systemStatus').innerText = `掃描結束。共鎖定周邊 ${radarCapturedMap.size} 組獨立通訊。`;
         if(radarCapturedMap.size > 0) document.getElementById('submitRegisterBtn').style.display = "block";
       }, 15000);
 
@@ -198,148 +200,145 @@
     const tbody = document.querySelector('#inlineBleTable tbody');
     tbody.innerHTML = '';
     if(radarCapturedMap.size === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#999;">雷達監聽中，等待周邊藍牙訊號發射...</td></tr>`;
-      return;
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#999;">雷達監聽中...</td></tr>`; return;
     }
-    radarCapturedMap.forEach((info, mac) => {
-      let isExist = masterDevices.some(m => m.mac === mac);
-      if (isExist) return; // 已錄入的就不重複顯示
+    
+    let currentIdx = 0;
+    radarCapturedMap.forEach((info, key) => {
+      // 比對總著名冊時，必須名稱、專案、設備編號三者完全吻合才叫已存在
+      let isExist = masterDevices.some(m => m.name === info.name && m.proj === info.proj && m.dev === info.dev);
+      if (isExist) return; 
       
-      // 💡 核心優化：直接將表格欄位轉成可修改的 <input>，找不到格式時，讓使用者可以當場手動輸入！
+      // 💡 修正 1：預設不勾選（無 checked）
       tbody.innerHTML += `
-        <tr class="ble-row" data-mac="${mac}">
-          <td><input type="checkbox" class="ble-chk" data-mac="${mac}" checked></td>
+        <tr class="ble-row" data-idx="${currentIdx}">
+          <td><input type="checkbox" class="ble-chk" data-idx="${currentIdx}"></td>
           <td><input type="text" class="edit-input edit-name" value="${info.name}"></td>
           <td><input type="text" class="edit-input edit-proj" value="${info.proj}"></td>
           <td><input type="text" class="edit-input edit-dev" value="${info.dev}"></td>
-          <td><code>${mac}</code></td>
+          <td><code>${info.tempId}</code></td>
         </tr>
       `;
+      currentIdx++;
     });
   }
 
-  // ==================== 💾 修正問題 4：改用萬能 GET 通道進行 100% 成功寫入 ====================
+  // ==================== 💾 勾選寫入與複合去重比對 ====================
   document.getElementById('submitRegisterBtn').addEventListener('click', () => {
     const checkedBoxes = document.querySelectorAll('.ble-chk:checked');
-    if(checkedBoxes.length === 0) { alert("請勾選要登錄的設備！"); return; }
+    if(checkedBoxes.length === 0) { alert("請勾選您要登錄的施工機具！"); return; }
     
-    document.getElementById('systemStatus').innerText = "雲端同步中：正在透過萬能通道上傳最新修改數據...";
+    document.getElementById('systemStatus').innerText = "雲端同步中：正在透過萬能通道上傳複合驗證履歷...";
     
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const lat = pos.coords.latitude; const lng = pos.coords.longitude;
       
-      // 依序抓取畫面上 input 內使用者最終修改的真實數值
       for (let chk of checkedBoxes) {
-        let mac = chk.getAttribute('data-mac');
-        let row = document.querySelector(`tr[data-mac="${mac}"]`);
-        let finalName = row.querySelector('.edit-name').value;
-        let finalProj = row.querySelector('.edit-proj').value;
-        let finalDev = row.querySelector('.edit-dev').value;
+        let idx = chk.getAttribute('data-idx');
+        let row = document.querySelector(`tr[data-idx="${idx}"]`);
+        let finalName = row.querySelector('.edit-name').value.trim();
+        let finalProj = row.querySelector('.edit-proj').value.trim();
+        let finalDev = row.querySelector('.edit-dev').value.trim();
+        let tempId = row.cells[4].innerText;
 
-        // 💡 終極修正：改用動態 JSONP 腳本注入法 (GET) 寫入 Device_List
-        await executeJsonpWrite(`${GAS_API_URL}?action=register&mac=${encodeURIComponent(mac)}&name=${encodeURIComponent(finalName)}&proj=${encodeURIComponent(finalProj)}&dev=${encodeURIComponent(finalDev)}`);
+        if(!finalName) continue;
+
+        // 💡 核心優化：發送給後端 GAS 進行 [名稱+專案+編號] 三欄位聯合比對寫入名冊表
+        await executeJsonpWrite(`${GAS_API_URL}?action=register&name=${encodeURIComponent(finalName)}&proj=${encodeURIComponent(finalProj)}&dev=${encodeURIComponent(finalDev)}&mac=${encodeURIComponent(tempId)}`);
         
-        // 💡 同步 JSONP (GET) 寫入位置動態表 Live_Status
-        await executeJsonpWrite(`${GAS_API_URL}?action=updateLocation&mac=${encodeURIComponent(mac)}&name=${encodeURIComponent(finalName)}&proj=${encodeURIComponent(finalProj)}&dev=${encodeURIComponent(finalDev)}&lat=${lat}&lng=${lng}&distance=${encodeURIComponent("0.0m(現場新增)")}`);
+        // 💡 修正 5：距離僅保留純數字+m，同步寫入位置表
+        await executeJsonpWrite(`${GAS_API_URL}?action=updateLocation&name=${encodeURIComponent(finalName)}&proj=${encodeURIComponent(finalProj)}&dev=${encodeURIComponent(finalDev)}&lat=${lat}&lng=${lng}&distance=${encodeURIComponent("0.0m")}`);
       }
       
-      alert("🎉 施工機具註冊與手動修改參數已成功寫入 Google Sheet 雙工作表！");
+      alert("🎉 數據已成功上傳試算表！(已執行三欄位聯合校對，並同步修正隨機變更的 MAC ID)");
       document.getElementById('bleScanBlock').style.display = "none";
       document.getElementById('submitRegisterBtn').style.display = "none";
-      loadRegisteredDevices(); // 重新整理總著名冊
-    }, (err) => {
-      alert("寫入失敗：手機未開啟位置服務，無法進行初始定位寫入。");
-    }, { enableHighAccuracy: true });
+      loadRegisteredDevices();
+    }, (err) => { alert("寫入失敗：未取得定位授權。"); }, { enableHighAccuracy: true });
   });
 
-  // 輔助函式：封裝 JSONP GET 寫入非同步等待
   function executeJsonpWrite(url) {
     return new Promise((resolve) => {
       const script = document.createElement('script');
-      const callbackName = "jsonp_write_" + Math.random().toString(36).substr(2, 9);
-      window[callbackName] = function(res) {
-        delete window[callbackName];
-        script.remove();
-        resolve(res);
-      };
-      script.src = `${url}&callback=${callbackName}`;
-      document.body.appendChild(script);
+      const callbackName = "jsonp_comp_" + Math.random().toString(36).substr(2, 9);
+      window[callbackName] = function(res) { delete window[callbackName]; script.remove(); resolve(res); };
+      script.src = `${url}&callback=${callbackName}`; document.body.appendChild(script);
     });
   }
 
-  // ==================== 📍 4. 定時清點與即時位置表 ====================
-  document.getElementById('manualQueryLocationBtn').addEventListener('click', () => { loadLiveStatusAndScan(); });
-
+  // ==================== 📍 3. 位置常態聯合比對點名 ====================
   function loadLiveStatusAndScan() {
-    document.getElementById('systemStatus').innerText = "點名狀態：正在呼叫位置名冊，同步啟動藍牙現場清點...";
+    document.getElementById('systemStatus').innerText = "點名狀態：正在呼叫歷史軌跡，同步啟動現場雷達點名...";
     const script = document.createElement('script');
     script.src = `${GAS_API_URL}?action=getLiveStatus&callback=processLiveStatusData`;
-    document.body.appendChild(script);
-    script.onload = () => script.remove();
+    document.body.appendChild(script); script.onload = () => script.remove();
   }
 
   window.processLiveStatusData = async function(cloudData) {
     liveStatusDevices = cloudData;
     updateFilterOptions('projFilterLive', liveStatusDevices);
     
-    let localSeenMacs = new Map();
+    // 💡 核心優化：因為手機 MAC ID 會變，點名快取 Map 改成以 `` `${名稱}_${專案}_${編號}` `` 作為現場存活的主鍵
+    let localSeenCompositeKeys = new Map(); // [名稱_專案_編號, RSSI]
+    
     if (navigator.bluetooth && navigator.bluetooth.requestLEScan) {
       try {
         const scan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true, keepRepeatedDevices: true });
-        const onLiveAdv = (e) => {
+        navigator.bluetooth.addEventListener('advertisementreceived', e => {
           let name = e.device.name || "";
           if (name.includes('#')) {
-            let mac = name.split('#')[3];
-            if(mac) localSeenMacs.set(mac.toUpperCase().trim(), e.rssi);
-          } else if(e.device.id) {
-            localSeenMacs.set(e.device.id.toUpperCase(), e.rssi);
+            let parts = name.split('#');
+            if(parts.length >= 3) {
+              let cKey = `${parts[0].trim()}_${parts[1].trim()}_${parts[2].trim()}`;
+              localSeenCompositeKeys.set(cKey, e.rssi);
+            }
           }
-        };
-        navigator.bluetooth.addEventListener('advertisementreceived', onLiveAdv);
-        await new Promise(r => setTimeout(r, 10000)); // 聽 10 秒
+        });
+        await new Promise(r => setTimeout(r, 10000)); // 密集聽 10 秒
         scan.stop();
-        navigator.bluetooth.removeEventListener('advertisementreceived', onLiveAdv);
-      } catch(err) { console.log("現場監聽受阻: " + err.message); }
+      } catch(err) { console.log("現場雷達未響應"); }
     }
 
     navigator.geolocation.getCurrentPosition((pos) => {
-      renderLiveLocationUI(pos.coords.latitude, pos.coords.longitude, localSeenMacs);
+      renderLiveLocationUI(pos.coords.latitude, pos.coords.longitude, localSeenCompositeKeys);
     }, (err) => {
-      renderLiveLocationUI(null, null, localSeenMacs);
+      renderLiveLocationUI(null, null, localSeenCompositeKeys);
     }, { enableHighAccuracy: true });
   }
 
-  function renderLiveLocationUI(currentLat, currentLng, localSeenMacs) {
+  function renderLiveLocationUI(currentLat, currentLng, localSeenCompositeKeys) {
     let filterProj = document.getElementById('projFilterLive').value;
     let nearCount = 0; let farCount = 0;
     
-    mapMarkers.forEach(m => mapInstance.removeLayer(m));
-    mapMarkers = [];
-
-    const tbody = document.querySelector('#liveTable tbody');
-    tbody.innerHTML = '';
+    mapMarkers.forEach(m => mapInstance.removeLayer(m)); mapMarkers = [];
+    const tbody = document.querySelector('#liveTable tbody'); tbody.innerHTML = '';
     let seq = 1;
 
     liveStatusDevices.forEach(dev => {
       if (filterProj !== "ALL" && dev.proj !== filterProj) return;
       
-      let isPresent = localSeenMacs.has(dev.mac.toUpperCase().trim());
+      // 💡 核心比對：檢查現場有沒有抓到 [同名稱、同專案、同編號] 的機具實體
+      let searchKey = `${dev.name.trim()}_${dev.proj.trim()}_${dev.dev.trim()}`;
+      let isPresent = localSeenCompositeKeys.has(searchKey);
+      
       let rowClass = isPresent ? "" : "row-absent";
       let pinColor = isPresent ? "orange" : "gray";
       let displayLoc = dev.loc;
       let displayDist = dev.dist;
-      let displayTime = dev.time ? new Date(dev.time).toLocaleTimeString() : "無紀錄";
+      let displayTime = dev.time;
 
       if (isPresent) {
         nearCount++;
-        let rssi = localSeenMacs.get(dev.mac.toUpperCase().trim());
+        let rssi = localSeenCompositeKeys.get(searchKey);
+        // 💡 修正 5：純數字計算距離
         let calcDist = Math.pow(10, (-69 - rssi) / (10 * 2)).toFixed(1) + "m";
         displayDist = calcDist;
-        displayTime = new Date().toLocaleTimeString();
+        displayTime = getNowStr(); // 💡 修正 4：日期+時間
+        
         if (currentLat && currentLng) {
           displayLoc = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
-          // 自動同步更新雲端位置 (改用 GET 萬能通道)
-          fetch(`${GAS_API_URL}?action=updateLocation&mac=${dev.mac}&name=${encodeURIComponent(dev.name)}&proj=${encodeURIComponent(dev.proj)}&dev=${encodeURIComponent(dev.dev)}&lat=${currentLat}&lng=${currentLng}&distance=${calcDist}`, { mode: 'no-cors' });
+          // 💡 背景自動點名同步更新：即使 MAC 改變了，後端收到指令也會自動校正更新
+          fetch(`${GAS_API_URL}?action=updateLocation&name=${encodeURIComponent(dev.name)}&proj=${encodeURIComponent(dev.proj)}&dev=${encodeURIComponent(dev.dev)}&lat=${currentLat}&lng=${currentLng}&distance=${calcDist}`, { mode: 'no-cors' });
         }
       } else {
         farCount++;
@@ -353,7 +352,7 @@
         if (!isNaN(lLat) && !isNaN(lLng)) {
           let markerHtmlStyles = `background-color: ${pinColor}; width: 24px; height: 24px; display: block; left: -12px; top: -12px; position: relative; border-radius: 24px 24px 0; transform: rotate(-45deg); border: 1px solid #FFFFFF; color:white; text-align:center; font-size:11px; line-height:24px; font-weight:bold;`;
           let customIcon = L.divIcon({ className: "custom-pin", iconAnchor: [0, 24], html: `<span style="${markerHtmlStyles}"><span style="transform: rotate(45deg); display:inline-block;">${seq}</span></span>` });
-          let marker = L.marker([lLat, lLng], {icon: customIcon}).addTo(mapInstance).bindPopup(`<b>[${seq}] ${dev.name}</b><br>現況: ${isPresent?'🟢 在附近':'⚪ 不在現場'}`);
+          let marker = L.marker([lLat, lLng], {icon: customIcon}).addTo(mapInstance).bindPopup(`<b>[${seq}] ${dev.name}</b><br>專案: ${dev.proj}<br>編號: ${dev.dev}<br>現況: ${isPresent?'🟢 現場附近':'⚪ 離場'}`);
           mapMarkers.push(marker);
         }
       }
@@ -361,21 +360,21 @@
     });
 
     document.getElementById('summaryBox').innerHTML = `🟢 在附近的設備數量：${nearCount} 台 ｜ ⚪ 不在附近的設備數量：${farCount} 台`;
-    document.getElementById('systemStatus').innerText = "系統狀態：定時清點與地圖刷新同步完成。";
+    document.getElementById('systemStatus').innerText = "系統狀態：聯合驗證清點與動態開源地圖連動完成。";
     if(mapMarkers.length > 0 && mapInstance) mapInstance.fitBounds(new L.featureGroup(mapMarkers).getBounds().pad(0.1));
   }
 
   function initLeafletMap() {
     if (mapInstance) return;
     mapInstance = L.map('map').setView([23.95, 121.56], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMapcontributors' }).addTo(mapInstance);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(mapInstance);
   }
 
   function updateFilterOptions(elementId, list) {
     const select = document.getElementById(elementId);
     const currentVal = select.value; select.innerHTML = '<option value="ALL">顯示全部專案</option>';
     const projs = [...new Set(list.map(d => d.proj).filter(Boolean))];
-    projs.forEach(p => { select.innerHTML += `<option value="${p}">${p}</option>`; });
+    projs.forEach(p => { select.innerHTML += `<option value="${p}">${p}</option>'; });
     select.value = currentVal;
   }
 
