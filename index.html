@@ -3,102 +3,103 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V5 資產追蹤旗艦控制台</title>
+  <title>施工機具追蹤系統</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    body { font-family: -apple-system, sans-serif; background: #f4f6f9; padding: 15px; color: #333; margin: 0; }
-    .container { max-width: 800px; margin: 10px auto; background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); box-sizing: border-box; }
-    h1 { text-align: center; color: #003366; margin-top: 0; font-size: 24px; }
-    .nav-bar { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
-    .btn { padding: 12px 20px; font-size: 14px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; background: #6c757d; transition: 0.2s; }
-    .btn-active { background: #0056b3; }
-    .btn-green { background: #28a745; width: 100%; padding: 14px; font-size: 16px; margin: 10px 0; }
-    .section { display: none; margin-top: 15px; }
+    body { font-family: -apple-system, sans-serif; background: #f4f6f9; padding: 12px; color: #333; margin: 0; }
+    .container { max-width: 900px; margin: 0 auto; background: white; padding: 15px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); box-sizing: border-box; }
+    h1 { text-align: center; color: #003366; margin-top: 0; font-size: 22px; border-bottom: 3px solid #003366; padding-bottom: 8px; }
+    .nav-bar { display: flex; gap: 10px; justify-content: center; margin-bottom: 15px; }
+    .btn { padding: 12px 15px; font-size: 14px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; background: #6c757d; flex: 1; text-align: center; }
+    .btn-active { background: #003366; }
+    .btn-green { background: #28a745; width: 100%; padding: 12px; font-size: 15px; margin: 10px 0; }
+    .section { display: none; margin-top: 10px; }
     .section-active { display: block; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; font-size: 13px; }
-    th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; }
+    .filter-box { background: #e9ecef; padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; background: white; font-size: 12px; }
+    th, td { border: 1px solid #dee2e6; padding: 8px; text-align: left; }
     th { background-color: #f1f3f5; color: #495057; }
-    tr:nth-child(even) { background-color: #fafbfc; }
-    .status-bar { font-size: 13px; color: #495057; background: #e9ecef; padding: 10px; border-radius: 6px; margin-bottom: 15px; line-height: 1.4; word-break: break-all; }
-    .config-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-size: 12px; }
-    .input-url { width: 95%; padding: 6px; font-size: 12px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; }
-    /* 復原的手動新增區塊樣式 */
-    .sub-block { background: #f8f9fa; border: 2px dashed #cee2e6; border-radius: 12px; padding: 15px; margin-top: 20px; }
-    .form-group { margin-bottom: 12px; }
-    .form-group label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 5px; color: #495057; }
-    .form-control { width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ced4da; border-radius: 6px; box-sizing: border-box; }
+    .row-absent { background-color: #f2f2f2 !important; color: #999; }
+    .status-bar { font-size: 12px; color: #495057; background: #fff3cd; padding: 8px; border-radius: 6px; margin-bottom: 12px; border: 1px solid #ffeeba; }
+    .sub-block { background: #f8f9fa; border: 2px dashed #003366; border-radius: 12px; padding: 12px; margin-top: 15px; }
+    .summary-box { margin-top: 10px; padding: 10px; background: #e2f0d9; border-radius: 6px; font-size: 13px; font-weight: bold; color: #385723; }
+    #map { width: 100%; height: 300px; border-radius: 12px; margin-top: 12px; border: 1px solid #ccc; }
+    .config-input { padding: 6px; font-size: 13px; width: 60px; text-align: center; border-radius: 4px; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
 <div class="container">
-  <h1>📡 V5 資產追蹤控制台</h1>
+  <h1>🏗️ 施工機具追蹤系統</h1>
   
-  <div class="config-box">
-    <strong>🔗 當前 GAS API 核心網址配置：</strong><br>
-    <input type="text" class="input-url" id="gasUrlInput" value="https://script.google.com/macros/s/AKfycbxleCZ7WmEhgxE0eh9yY9pjKTIhEajVByyQyYNNm2GNI5gmXuiS9nG9QAm7Vno4G0Bb/exec">
-  </div>
+  <input type="hidden" id="gasUrlInput" value="https://script.google.com/macros/s/AKfycbxleCZ7WmEhgxE0eh9yY9pjKTIhEajVByyQyYNNm2GNI5gmXuiS9nG9QAm7Vno4G0Bb/exec">
 
-  <div class="status-bar" id="radarStatus">系統狀態：控制台準備就緒。</div>
+  <div class="status-bar" id="radarStatus">系統狀態：控制台就緒。</div>
   
   <div class="nav-bar">
-    <button class="btn" id="navDeviceBtn">📋 查看雲端設備總表</button>
-    <button class="btn" id="navSearchBtn">🎯 自動雷達掃描模式</button>
+    <button class="btn" id="navDeviceBtn">📋 查詢登錄設備</button>
+    <button class="btn" id="navSearchBtn">📍 設備位置資訊</button>
   </div>
   
   <div id="deviceSection" class="section">
-    <h2>📋 已登錄設備總表 (GAS 同步)</h2>
+    <div class="filter-box">
+      <label>🔍 依專案編號篩選：</label>
+      <select id="projFilterMaster" onchange="filterMasterTable()"><option value="ALL">顯示全部專案</option></select>
+    </div>
+    <h3>已登錄設備清單</h3>
     <table id="deviceTable">
-      <thead><tr><th>序號</th><th>設備名稱</th><th>藍牙 MAC / ID 碼</th><th>最後登錄時間</th></tr></thead>
-      <tbody><tr><td colspan="4" style="text-align:center; color:#999;">請點擊上方按鈕或手動重新整理載入雲端資料...</td></tr></tbody>
+      <thead><tr><th>序號</th><th>設備名稱</th><th>專案編號</th><th>設備編號</th><th>Mac碼</th><th>登錄時間</th></tr></thead>
+      <tbody><tr><td colspan="6" style="text-align:center; color:#999;">正在載入雲端名冊...</td></tr></tbody>
     </table>
 
-    <div class="sub-block">
-      <h3>➕ 手動單筆新增 / 修改雲端設備</h3>
-      <div class="form-group">
-        <label>藍牙 MAC 位址 / ID：</label>
-        <input type="text" class="form-control" id="manualMac" placeholder="例如：AA:BB:CC:DD:EE:FF">
-      </div>
-      <div class="form-group">
-        <label>自訂資產設備名稱：</label>
-        <input type="text" class="form-control" id="manualName" placeholder="例如：高價儀器A款 / 測試標籤">
-      </div>
-      <button class="btn btn-active" id="manualSubmitBtn" style="width:100%; margin-top:5px; padding:12px;">💾 送出登錄至 Google 試算表</button>
+    <button class="btn btn-green" id="showBleScanBlockBtn">➕ 新增登錄設備</button>
+
+    <div class="sub-block" id="bleScanBlock" style="display:none;">
+      <h4>周邊未登錄設備 (雷達自動識別拆字)</h4>
+      <table id="inlineBleTable">
+        <thead><tr><th>勾選</th><th>設備名稱</th><th>專案編號</th><th>設備編號</th><th>Mac碼</th></tr></thead>
+        <tbody><tr><td colspan="5" style="text-align:center; color:#999;">尚未啟動藍牙雷達。</td></tr></tbody>
+      </table>
+      <button class="btn" id="submitRegisterBtn" style="background:#28a745; width:100%; margin-top:10px; display:none;">💾 確定勾選登錄並同步初始定位</button>
     </div>
   </div>
 
   <div id="searchSection" class="section">
-    <h2>🎯 周邊藍牙雷達 (全自動非連線捕捉)</h2>
-    <p style="font-size:12px; color:#666; margin: 0 0 10px 0;">點擊按鈕後，網頁將自動收集周遭所有藍牙廣播（免人工配對點選）：</p>
-    
-    <button class="btn btn-green" id="startRadarBtn">🔍 啟動藍牙雷達自動掃描 (10秒)</button>
-    
-    <table id="radarResultTable" style="margin-top:15px;">
-      <thead>
-        <tr>
-          <th>序號</th>
-          <th>自動捕獲之真實 MAC / ID</th>
-          <th>廣播名稱 (Device Name)</th>
-          <th>訊號強度 (RSSI)</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td colspan="4" style="text-align:center; color:#999;">尚未啟動雷達掃描。</td></tr>
-      </tbody>
+    <div class="filter-box">
+      <span>自動更新頻率：每 <input type="text" class="config-input" id="timerIntervalInput" value="5"> 分鐘自動重新查詢</span>
+      <button class="btn" id="manualQueryLocationBtn" style="background:#003366; max-width:180px; padding:6px 12px;">🔍 查詢設備位置資訊</button>
+    </div>
+    <div class="filter-box">
+      <label>🎯 位置表專案篩選：</label>
+      <select id="projFilterLive" onchange="filterLiveTable()"><option value="ALL">顯示全部專案</option></select>
+    </div>
+
+    <h3>設備位置清單</h3>
+    <table id="liveTable">
+      <thead><tr><th>序號</th><th>設備名稱</th><th>專案編號</th><th>設備編號</th><th>位置資訊</th><th>距離</th><th>定位時間</th></tr></thead>
+      <tbody><tr><td colspan="7" style="text-align:center; color:#999;">等待查詢指令...</td></tr></tbody>
     </table>
-    
-    <button class="btn btn-active" id="bulkUploadBtn" style="width:100%; margin-top:15px; display:none;">💾 將上方自動抓取到的設備「批量寫入雲端」</button>
+
+    <div class="summary-box" id="summaryBox">
+      🟢 在附近的設備數量：0 台 ｜ ⚪ 不在附近的設備數量：0 台
+    </div>
+
+    <div id="map"></div>
   </div>
 </div>
 
 <script>
+  const GAS_API_URL = document.getElementById('gasUrlInput').value;
+  let masterDevices = []; 
+  let liveStatusDevices = [];
   let radarCapturedMap = new Map();
+  let mapInstance = null;
+  let mapMarkers = [];
+  let autoRefreshTimer = null;
 
-  function getGasUrl() {
-    return document.getElementById('gasUrlInput').value.trim();
-  }
-
-  // 分頁切換監聽
+  // 初始化導覽分頁
   document.getElementById('navDeviceBtn').addEventListener('click', () => { switchSection('deviceSection', 'navDeviceBtn'); loadRegisteredDevices(); });
-  document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); });
+  document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); initLeafletMap(); loadLiveStatusAndScan(); startAutoTimer(); });
 
   function switchSection(sectId, btnId) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('section-active'));
@@ -107,160 +108,268 @@
     document.getElementById(btnId).classList.add('btn-active');
   }
 
-  // 1. 📋 讀取雲端清單功能 (終局之戰：改用 JSONP 穿透，永不噴 CORS 阻擋)
+  // ==================== JSONP 通道解鎖大魔王 ====================
   function loadRegisteredDevices() {
-    document.getElementById('radarStatus').innerText = "狀態：正在透過 JSONP 安全通道抓取試算表資料...";
-    
-    // 移除舊的探針標籤（若存在）
-    const oldScript = document.getElementById('gasJsonpScript');
-    if (oldScript) oldScript.remove();
-    
-    // 建立一個全新的臨時 <script> 標籤
     const script = document.createElement('script');
-    script.id = 'gasJsonpScript';
-    
-    // 💡 關鍵：網址後面加上 &callback=handleGasResponse
-    script.src = `${getGasUrl()}?action=getDevices&callback=handleGasResponse`;
-    
-    // 如果載入失敗的安全防禦
-    script.onerror = function() {
-      document.getElementById('radarStatus').innerText = "⚠️ JSONP 載入異常，請確認您的 GAS 網址是否正確且已發布。";
-    };
-    
+    script.src = `${GAS_API_URL}?action=getDevices&callback=processMasterDevices`;
     document.body.appendChild(script);
+    script.onload = () => script.remove();
   }
 
-  // 💡 這是 JSONP 的全域回呼函式，當 Google 回傳資料時會自動執行這裡
-  window.handleGasResponse = function(data) {
-    if (data.error) {
-      document.getElementById('radarStatus').innerText = "❌ 雲端錯誤: " + data.error;
-      return;
-    }
-    document.getElementById('radarStatus').innerText = "狀態：雲端試算表資料 100% 同步成功！";
-    
-    const tbody = document.querySelector('#deviceTable tbody'); 
+  window.processMasterDevices = function(data) {
+    masterDevices = data;
+    updateProjectFilter('projFilterMaster', masterDevices);
+    renderMasterTable("ALL");
+  }
+
+  function renderMasterTable(filterProj) {
+    const tbody = document.querySelector('#deviceTable tbody');
     tbody.innerHTML = '';
-    
-    if (data.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#999;">試算表內目前無資料，請利用下方表單或雷達新增。</td></tr>`;
-      return;
-    }
-
-    data.forEach((dev, index) => { 
-      tbody.innerHTML += `<tr><td>${index+1}</td><td>${dev.name}</td><td><code>${dev.mac}</code></td><td>${dev.time ? new Date(dev.time).toLocaleString() : '---'}</td></tr>`; 
+    let seq = 1;
+    masterDevices.forEach(dev => {
+      if (filterProj !== "ALL" && dev.proj !== filterProj) return;
+      tbody.innerHTML += `<tr><td>${seq++}</td><td>${dev.name}</td><td>${dev.proj}</td><td>${dev.dev}</td><td><code>${dev.mac}</code></td><td>${dev.time?new Date(dev.time).toLocaleString():'---'}</td></tr>`;
     });
-  };
+    document.getElementById('radarStatus').innerText = "系統狀態：已登錄設備名冊同步完畢。";
+  }
 
-  // 2. ➕ 手動新增設備點擊事件
-  document.getElementById('manualSubmitBtn').addEventListener('click', async () => {
-    const mac = document.getElementById('manualMac').value.trim();
-    const name = document.getElementById('manualName').value.trim();
-    
-    if (!mac || !name) {
-      alert("請完整填寫 MAC 位址與設備名稱！");
-      return;
-    }
-    
-    document.getElementById('radarStatus').innerText = "正在單筆手動上傳至雲端...";
-    
-    const formData = new URLSearchParams();
-    formData.append("mac", mac);
-    formData.append("name", name);
-    
-    await fetch(`${getGasUrl()}?action=register`, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData.toString()
-    });
-    
-    alert(`🎉 手動登錄指令已發送！設備 [${name}] 已同步寫入。`);
-    document.getElementById('manualMac').value = "";
-    document.getElementById('manualName').value = "";
-    
-    // 1.2 秒後自動刷清單
-    setTimeout(() => { loadRegisteredDevices(); }, 1200);
-  });
+  function updateProjectFilter(elementId, list) {
+    const select = document.getElementById(elementId);
+    const currentVal = select.value;
+    select.innerHTML = '<option value="ALL">顯示全部專案</option>';
+    const projs = [...new Set(list.map(d => d.proj).filter(Boolean))];
+    projs.forEach(p => { select.innerHTML += `<option value="${p}">${p}</option>`; });
+    select.value = currentVal;
+  }
 
-  // 3. 📡 藍牙廣播雷達全自動掃描 (維持您手機已經成功的核心功能)
-  document.getElementById('startRadarBtn').addEventListener('click', async () => {
+  function filterMasterTable() { renderMasterTable(document.getElementById('projFilterMaster').value); }
+  function filterLiveTable() { renderLiveTable(document.getElementById('projFilterLive').value); }
+
+  // ==================== ➕ 新增捕捉與拆字功能 ====================
+  document.getElementById('showBleScanBlockBtn').addEventListener('click', async () => {
+    document.getElementById('bleScanBlock').style.display = "block";
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
-      alert("❌ 錯誤：未檢測到藍牙雷達功能。");
+      alert("您的瀏覽器未啟用實驗性藍牙雷達。請參閱報告附錄開啟 Flags 參數！");
       return;
     }
-
     try {
-      radarCapturedMap.clear(); 
-      document.getElementById('radarStatus').innerText = "雷達狀態：正在初始化監聽器...";
+      radarCapturedMap.clear();
+      document.getElementById('radarStatus').innerText = "雷達狀態：正在自動捕捉周邊未登錄機具，請等待 15 秒...";
+      const scan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true, keepRepeatedDevices: true });
       
-      const scan = await navigator.bluetooth.requestLEScan({
-        acceptAllAdvertisements: true,
-        keepRepeatedDevices: true
-      });
-
-      document.getElementById('radarStatus').innerText = "雷達狀態：🔴 正在自動捕捉周遭所有藍牙廣播，請等待 10 秒結算...";
-      document.getElementById('startRadarBtn').disabled = true;
-      document.getElementById('startRadarBtn').innerText = "⚡ 雷達監聽中...";
-
-      const advertisementCallback = (event) => {
-        let macAddress = event.device.id; 
-        let deviceName = event.device.name || "不明設備 / 未命名廣播";
-        let rssi = event.rssi || "--";
-        radarCapturedMap.set(macAddress, { name: deviceName, rssi: rssi });
-        updateRadarTableUI();
-      };
-
-      navigator.bluetooth.addEventListener('advertisementreceived', advertisementCallback);
-
-      setTimeout(() => {
-        scan.stop(); 
-        navigator.bluetooth.removeEventListener('advertisementreceived', advertisementCallback);
-        
-        document.getElementById('startRadarBtn').disabled = false;
-        document.getElementById('startRadarBtn').innerText = "🔍 啟動藍牙雷達自動掃描 (10秒)";
-        document.getElementById('radarStatus').innerText = `雷達狀態：🛑 掃描完成！共自動抓取到 ${radarCapturedMap.size} 個設備。`;
-        
-        if(radarCapturedMap.size > 0) {
-          document.getElementById('bulkUploadBtn').style.display = "block";
+      const onAdv = (event) => {
+        let rawName = event.device.name || "";
+        // 💡 核心明文拆字邏輯：機具名稱#專案編號#設備編號#真實MAC
+        if (rawName.includes('#')) {
+          let parts = rawName.split('#');
+          if (parts.length >= 4) {
+            let extractedMac = parts[3].trim();
+            radarCapturedMap.set(extractedMac, { name: parts[0], proj: parts[1], dev: parts[2], mac: extractedMac });
+            updateInlineBleUI();
+          }
         }
-      }, 10000);
-
-    } catch (e) {
-      alert("雷達開啟失敗：" + e.message);
-    }
+      };
+      navigator.bluetooth.addEventListener('advertisementreceived', onAdv);
+      setTimeout(() => {
+        scan.stop();
+        navigator.bluetooth.removeEventListener('advertisementreceived', onAdv);
+        document.getElementById('radarStatus').innerText = `雷達掃描結束，共發現 ${radarCapturedMap.size} 個施工標籤。`;
+        if(radarCapturedMap.size > 0) document.getElementById('submitRegisterBtn').style.display = "block";
+      }, 15000);
+    } catch(e) { alert("開啟雷達失敗: " + e.message); }
   });
 
-  function updateRadarTableUI() {
-    const tbody = document.querySelector('#radarResultTable tbody');
+  function updateInlineBleUI() {
+    const tbody = document.querySelector('#inlineBleTable tbody');
     tbody.innerHTML = '';
-    let index = 1;
+    let idx = 0;
     radarCapturedMap.forEach((info, mac) => {
-      tbody.innerHTML += `<tr><td>${index}</td><td><code>${mac}</code></td><td>${info.name}</td><td>${info.rssi} dBm</td></tr>`;
-      index++;
+      // 檢查是否已在總名冊中，若已存在則不重複入庫
+      let isExist = masterDevices.some(m => m.mac === mac);
+      if (isExist) return;
+      tbody.innerHTML += `<tr><td><input type="checkbox" class="ble-chk" data-mac="${mac}" checked></td><td>${info.name}</td><td>${info.proj}</td><td>${info.dev}</td><td><code>${mac}</code></td></tr>`;
+      idx++;
     });
+    if(tbody.innerHTML === '') tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#999;">周邊設備皆已登錄或無符合機具包。</td></tr>`;
   }
 
-  // 4. 批量寫入雲端試算表 (POST 盲發)
-  document.getElementById('bulkUploadBtn').addEventListener('click', async () => {
-    document.getElementById('radarStatus').innerText = "正在將雷達清單批量寫入雲端試算表...";
+  document.getElementById('submitRegisterBtn').addEventListener('click', async () => {
+    const chks = document.querySelectorAll('.ble-chk:checked');
+    if(chks.length === 0) return;
+    document.getElementById('radarStatus').innerText = "正在批量上傳登錄與初始化定位資訊...";
     
-    for (let [mac, info] of radarCapturedMap) {
-      const formData = new URLSearchParams();
-      formData.append("mac", mac);
-      formData.append("name", info.name);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const lat = pos.coords.latitude; const lng = pos.coords.longitude;
       
-      fetch(`${getGasUrl()}?action=register`, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString()
-      });
+      for (let chk of chks) {
+        let mac = chk.getAttribute('data-mac');
+        let info = radarCapturedMap.get(mac);
+        
+        // 1. 盲發寫入 Device_List
+        let f1 = new URLSearchParams(); f1.append("action", "register"); f1.append("mac", mac); f1.append("name", info.name); f1.append("proj", info.proj); f1.append("dev", info.dev);
+        await fetch(GAS_API_URL, { method: 'POST', mode: 'no-cors', body: f1.toString() });
+        
+        // 2. 同步寫入 Live_Status
+        let f2 = new URLSearchParams(); f2.append("action", "updateLocation"); f2.append("mac", mac); f2.append("name", info.name); f2.append("proj", info.proj); f2.append("dev", info.dev); f2.append("lat", lat); f2.append("lng", lng); f2.append("distance", "1.5m(初始登錄)");
+        await fetch(GAS_API_URL, { method: 'POST', mode: 'no-cors', body: f2.toString() });
+      }
+      alert("🎉 機具設備登錄成功！並已同步建立地理定位資料。");
+      document.getElementById('bleScanBlock').style.display = "none";
+      loadRegisteredDevices();
+    });
+  });
+
+  // ==================== 📍 2. 設備位置與地圖即時連動 ====================
+  document.getElementById('manualQueryLocationBtn').addEventListener('click', () => { loadLiveStatusAndScan(); });
+
+  function loadLiveStatusAndScan() {
+    document.getElementById('radarStatus').innerText = "狀態：正在讀取雲端最新地理狀態並同步啟用藍牙點名...";
+    const script = document.createElement('script');
+    script.src = `${GAS_API_URL}?action=getLiveStatus&callback=processLiveStatusData`;
+    document.body.appendChild(script);
+    script.onload = () => script.remove();
+  }
+
+  window.processLiveStatusData = async function(cloudData) {
+    liveStatusDevices = cloudData;
+    updateProjectFilter('projFilterLive', liveStatusDevices);
+    
+    // 同步開啟 10 秒藍牙雷達現場點名
+    let localSeenMacs = new Map();
+    if (navigator.bluetooth && navigator.bluetooth.requestLEScan) {
+      try {
+        const scan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true, keepRepeatedDevices: true });
+        navigator.bluetooth.addEventListener('advertisementreceived', e => {
+          if (e.device.name && e.device.name.includes('#')) {
+            let mac = e.device.name.split('#')[3];
+            if(mac) localSeenMacs.set(mac.trim(), e.rssi);
+          }
+        });
+        await new Promise(r => setTimeout(r, 10000)); // 現場瘋狂點名 10 秒
+        scan.stop();
+      } catch(err) { console.log("現場藍牙未就緒或遭拒絕: " + err.message); }
     }
 
-    alert(`🎉 成功！已將 ${radarCapturedMap.size} 筆自動抓取的藍牙資訊發送至雲端試算表！`);
-    document.getElementById('bulkUploadBtn').style.display = "none";
-    setTimeout(() => { loadRegisteredDevices(); }, 1500);
-  });
+    // 取得手機 GPS 定位
+    navigator.geolocation.getCurrentPosition((pos) => {
+      executeLocationConsolidation(pos.coords.latitude, pos.coords.longitude, localSeenMacs);
+    }, (err) => {
+      executeLocationConsolidation(null, null, localSeenMacs); // 無 GPS 降級處理
+    }, { enableHighAccuracy: true });
+  }
+
+  function executeLocationConsolidation(currentLat, currentLng, localSeenMacs) {
+    let filterProj = document.getElementById('projFilterLive').value;
+    let nearCount = 0; let farCount = 0;
+    
+    // 清空舊標記
+    mapMarkers.forEach(m => mapInstance.removeLayer(m));
+    mapMarkers = [];
+
+    const tbody = document.querySelector('#liveTable tbody');
+    tbody.innerHTML = '';
+    let seq = 1;
+
+    liveStatusDevices.forEach(dev => {
+      if (filterProj !== "ALL" && dev.proj !== filterProj) return;
+      
+      let isPresent = localSeenMacs.has(dev.mac);
+      let rowClass = isPresent ? "" : "row-absent";
+      let pinColor = isPresent ? "orange" : "gray";
+      let displayLoc = dev.loc;
+      let displayDist = dev.dist;
+      let displayTime = dev.time ? new Date(dev.time).toLocaleTimeString() : "無紀錄";
+
+      if (isPresent) {
+        nearCount++;
+        let rssi = localSeenMacs.get(dev.mac);
+        // 簡易距離估算公式
+        let calcDist = Math.pow(10, (-69 - rssi) / (10 * 2)).toFixed(1) + "m";
+        displayDist = calcDist;
+        displayTime = new Date().toLocaleTimeString();
+        if (currentLat && currentLng) {
+          displayLoc = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
+          // 💡 同步寫入雲端
+          let f = new URLSearchParams(); f.append("action", "updateLocation"); f.append("mac", dev.mac); f.append("name", dev.name); f.append("proj", dev.proj); f.append("dev", dev.dev); f.append("lat", currentLat); f.append("lng", currentLng); f.append("distance", calcDist);
+          fetch(GAS_API_URL, { method: 'POST', mode: 'no-cors', body: f.toString() });
+        }
+      } else {
+        farCount++;
+      }
+
+      tbody.innerHTML += `
+        <tr class="${rowClass}">
+          <td>${seq}</td>
+          <td><b>${dev.name}</b></td>
+          <td>${dev.proj}</td>
+          <td>${dev.dev}</td>
+          <td>📍 ${displayLoc}</td>
+          <td>${displayDist}</td>
+          <td>⏱️ ${displayTime}</td>
+        </tr>
+      `;
+
+      // 💡 繪製地圖大頭針 (標示目前表格序號)
+      if (displayLoc && displayLoc.includes(',')) {
+        let pts = displayLoc.split(',');
+        let lLat = parseFloat(pts[0]); let lLng = parseFloat(pts[1]);
+        if (!isNaN(lLat) && !isNaN(lLng)) {
+          // 自訂 Leaflet 大頭針樣式顏色
+          let markerHtmlStyles = `background-color: ${pinColor}; width: 24px; height: 24px; display: block; left: -12px; top: -12px; position: relative; border-radius: 24px 24px 0; transform: rotate(-45deg); border: 1px solid #FFFFFF; color:white; text-align:center; font-size:11px; line-height:24px; font-weight:bold; font-family:sans-serif;`;
+          let icon = L.divIcon({
+            className: "custom-pin-icon",
+            iconAnchor: [0, 24],
+            labelAnchor: [-6, 0],
+            popupAnchor: [0, -36],
+            html: `<span style="${markerHtmlStyles}"><span style="transform: rotate(45deg); display:inline-block;">${seq}</span></span>`
+          });
+
+          let marker = L.marker([lLat, lLng], {icon: icon}).addTo(mapInstance)
+            .bindPopup(`<b>[${seq}] ${dev.name}</b><br>編號: ${dev.dev}<br>狀態: ${isPresent?'現場附近':'不在現場'}`);
+          mapMarkers.push(marker);
+        }
+      }
+      seq++;
+    });
+
+    // 更新統計看板
+    document.getElementById('summaryBox').innerHTML = `🟢 在附近的機具數量：${nearCount} 台 ｜ ⚪ 不在附近的機具數量：${farCount} 台`;
+    document.getElementById('radarStatus').innerText = "雷達狀態：現場自動定時清點與動態地圖更新完畢。";
+    
+    // 地圖自動縮放到合適視野範圍
+    if(mapMarkers.length > 0) {
+      let group = new L.featureGroup(mapMarkers);
+      mapInstance.fitBounds(group.getBounds().pad(0.1));
+    }
+  }
+
+  function filterLiveTable() { 
+    if(liveStatusDevices.length > 0) executeLocationConsolidation(null, null, new Map());
+  }
+
+  // 初始化地圖實體
+  function initLeafletMap() {
+    if (mapInstance) return;
+    // 預設中心點設在台灣花蓮吉安附近 (23.95, 121.56)
+    mapInstance = L.map('map').setView([23.95, 121.56], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(mapInstance);
+  }
+
+  // ==================== ⏱️ 自動更新排程器 ====================
+  function startAutoTimer() {
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+    let mins = parseFloat(document.getElementById('timerIntervalInput').value) || 5;
+    autoRefreshTimer = setInterval(() => {
+      console.log("自動定時清點計時器觸發！");
+      loadLiveStatusAndScan();
+    }, mins * 60 * 1000);
+  }
+  
+  // 監聽時間輸入框變更自動重啟計時器
+  document.getElementById('timerIntervalInput').addEventListener('change', () => { startAutoTimer(); });
 </script>
 </body>
 </html>
