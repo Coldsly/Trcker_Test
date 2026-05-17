@@ -28,18 +28,38 @@
     .config-input { padding: 6px; font-size: 13px; width: 50px; text-align: center; border-radius: 4px; border: 1px solid #ccc; }
     .edit-input { width: 90%; padding: 4px; font-size: 12px; border: 1px solid #bbb; border-radius: 4px; }
 
-    /* ==================== 🖨️ CSS 友善列印與橫向 PDF 控制引擎 ==================== */
+    /* ==================== 🖨️ CSS 究極版：橫向友善列印 (解鎖地圖輸出) ==================== */
     @media print {
       @page { size: landscape; margin: 1cm; }
       body { background: white; color: black; padding: 0; }
       .container { box-shadow: none; max-width: 100%; padding: 0; }
-      h1, .nav-bar, .filter-box, #map, #deviceSection, #printBtn, h3 { display: none !important; }
+      
+      /* 隱藏無關元素 */
+      h1, .nav-bar, .filter-box, #deviceSection, #printBtn, h3 { display: none !important; }
+      
       #searchSection { display: block !important; }
-      table { width: 100%; border: 2px solid #000; font-size: 13px; margin-top: 0; }
-      th, td { border: 1px solid #000 !important; padding: 8px !important; background: transparent !important; color: #000 !important; }
+      table { width: 100%; border: 2px solid #000; font-size: 13px; margin-top: 0; page-break-inside: auto; }
+      tr { page-break-inside: avoid; page-break-after: auto; }
+      
+      th, td { border: 1px solid #000 !important; padding: 8px !important; color: #000 !important; }
+      
+      /* 💡 萬能顏色保留解鎖：強制保留表格標題與灰色標籤的背景顏色，連同地圖 Tiles 一併放行 */
       th { background-color: #f2f2f2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .row-absent { background-color: #f9f9f9 !important; color: #777 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .row-absent { background-color: #f5f5f5 !important; color: #666 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .summary-box { border: 1px solid #000 !important; background: #fff !important; color: #000 !important; margin-top: 15px; font-size: 14px; }
+      
+      /* 💡 解鎖地圖列印：設定橫向 PDF 中的專屬地圖比例，並強制背景顏色與大頭針 CSS 100% 輸出 */
+      #map { 
+        display: block !important; 
+        width: 100% !important; 
+        height: 280px !important; 
+        margin-top: 20px !important;
+        page-break-inside: avoid;
+        -webkit-print-color-adjust: exact; 
+        print-color-adjust: exact;
+      }
+      .custom-pin span { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
       #searchSection::before {
         content: "🏗️ 施工機具追蹤系統 - 現場清點即時位置報表";
         display: block; text-align: center; font-size: 20px; font-weight: bold; color: #000; margin-bottom: 20px;
@@ -119,7 +139,6 @@
 </div>
 
 <script>
-  // 💡 請在此處更換為您發布新版本後的最新 GAS 網址
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxleCZ7WmEhgxE0eh9yY9pjKTIhEajVByyQyYNNm2GNI5gmXuiS9nG9QAm7Vno4G0Bb/exec";
   
   let masterDevices = []; 
@@ -134,7 +153,6 @@
     return `${d.getFullYear()}/${("0"+(d.getMonth()+1)).slice(-2)}/${("0"+d.getDate()).slice(-2)} ${("0"+d.getHours()).slice(-2)}:${("0"+d.getMinutes()).slice(-2)}:${("0"+d.getSeconds()).slice(-2)}`;
   }
 
-  // 綁定導覽切換與手動查詢按鈕
   document.getElementById('navDeviceBtn').addEventListener('click', () => { switchSection('deviceSection', 'navDeviceBtn'); loadRegisteredDevices(); });
   document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); initLeafletMap(); loadLiveStatusAndScan(); startAutoTimer(); });
   document.getElementById('manualQueryLocationBtn').addEventListener('click', () => { loadLiveStatusAndScan(); });
@@ -148,7 +166,6 @@
 
   window.onload = () => { loadRegisteredDevices(); };
 
-  // ==================== 讀取總名冊 (JSONP 通道) ====================
   function loadRegisteredDevices() {
     document.getElementById('systemStatus').innerText = "系統狀態：正在由雲端讀取名冊...";
     const script = document.createElement('script');
@@ -174,11 +191,10 @@
     document.getElementById('systemStatus').innerText = "系統狀態：雲端名冊同步完成。";
   }
 
-  // ==================== ➕ 15秒大雷達監聽鎖定 ====================
   document.getElementById('showBleScanBlockBtn').addEventListener('click', async () => {
     document.getElementById('bleScanBlock').style.display = "block";
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
-      alert("瀏覽器不支援藍牙雷達功能！請進入 chrome://flags 開啟實驗性 Web 功能。"); return;
+      alert("瀏覽器不支援藍牙雷達功能！"); return;
     }
     try {
       radarCapturedMap.clear();
@@ -212,8 +228,7 @@
       navigator.bluetooth.addEventListener('advertisementreceived', onAdv);
       
       setTimeout(() => {
-        scan.stop(); 
-        navigator.bluetooth.removeEventListener('advertisementreceived', onAdv);
+        scan.stop(); navigator.bluetooth.removeEventListener('advertisementreceived', onAdv);
         document.getElementById('systemStatus').innerText = `掃描結束。共鎖定周邊 ${radarCapturedMap.size} 組實體裝置。`;
         if(radarCapturedMap.size > 0) document.getElementById('submitRegisterBtn').style.display = "block";
       }, 15000);
@@ -246,7 +261,6 @@
     });
   }
 
-  // ==================== 💾 勾選寫入雲端 ====================
   document.getElementById('submitRegisterBtn').addEventListener('click', () => {
     const checkedBoxes = document.querySelectorAll('.ble-chk:checked');
     if(checkedBoxes.length === 0) { alert("請勾選您要登錄的施工機具！"); return; }
@@ -274,7 +288,7 @@
       document.getElementById('bleScanBlock').style.display = "none";
       document.getElementById('submitRegisterBtn').style.display = "none";
       loadRegisteredDevices();
-    }, (err) => { alert("寫入失敗：未取得手機定位授權。"); }, { enableHighAccuracy: true });
+    }, (err) => { alert("寫入失敗：未取得定位授權。"); }, { enableHighAccuracy: true });
   });
 
   function executeJsonpWrite(url) {
@@ -287,7 +301,6 @@
     });
   }
 
-  // ==================== 📍 10秒現場常態雷達點名 ====================
   function loadLiveStatusAndScan() {
     document.getElementById('systemStatus').innerText = "點名狀態：正在提取歷史軌跡，同步開啟現場雷達點名...";
     const script = document.createElement('script');
@@ -315,7 +328,7 @@
           }
         };
         navigator.bluetooth.addEventListener('advertisementreceived', onLiveAdv);
-        await new Promise(r => setTimeout(r, 10000)); // 💡 現場定時精準監聽點名 10 秒
+        await new Promise(r => setTimeout(r, 10000)); 
         scan.stop();
         navigator.bluetooth.removeEventListener('advertisementreceived', onLiveAdv);
       } catch(err) { console.log("現場雷達未響應"); }
@@ -363,7 +376,6 @@
 
       tbody.innerHTML += `<tr class="${rowClass}"><td>${seq}</td><td><b>${dev.name}</b></td><td>${dev.proj}</td><td>${dev.dev}</td><td>📍 ${displayLoc}</td><td>${displayDist}</td><td>⏱️ ${displayTime}</td></tr>`;
 
-      // 💡 內嵌防禦型安全坐標拆解結構 (確保髒資料不卡死渲染)
       if (mapInstance && displayLoc && displayLoc.includes(',')) {
         let pts = displayLoc.split(',');
         if (pts.length === 2) {
@@ -387,7 +399,7 @@
   function initLeafletMap() {
     if (mapInstance) return;
     mapInstance = L.map('map').setView([23.95, 121.56], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(mapInstance);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(mapInstance);
   }
 
   function updateFilterOptions(elementId, list) {
@@ -400,9 +412,6 @@
     });
     select.value = currentVal;
   }
-
-  function filterMasterTable() { renderMasterTable(document.getElementById('projFilterMaster').value); }
-  function filterLiveTable() { if(liveStatusDevices.length > 0) renderLiveLocationUI(null, null, new Map()); }
 
   function startAutoTimer() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
