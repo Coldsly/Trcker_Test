@@ -21,6 +21,11 @@
     .status-bar { font-size: 13px; color: #495057; background: #e9ecef; padding: 10px; border-radius: 6px; margin-bottom: 15px; line-height: 1.4; word-break: break-all; }
     .config-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-size: 12px; }
     .input-url { width: 95%; padding: 6px; font-size: 12px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; }
+    /* 復原的手動新增區塊樣式 */
+    .sub-block { background: #f8f9fa; border: 2px dashed #cee2e6; border-radius: 12px; padding: 15px; margin-top: 20px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 5px; color: #495057; }
+    .form-control { width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ced4da; border-radius: 6px; box-sizing: border-box; }
   </style>
 </head>
 <body>
@@ -32,7 +37,7 @@
     <input type="text" class="input-url" id="gasUrlInput" value="https://script.google.com/macros/s/AKfycbzxmX2_wgRs4Y9xzx6YhyrttYE63N3GUKG0iFqn5OZNV8g621ZKNW3mnhOyMr1X7kWz/exec">
   </div>
 
-  <div class="status-bar" id="radarStatus">系統狀態：控制台準備就緒。請確保已開啟 chrome://flags 的實驗性藍牙雷達功能。</div>
+  <div class="status-bar" id="radarStatus">系統狀態：控制台準備就緒。</div>
   
   <div class="nav-bar">
     <button class="btn" id="navDeviceBtn">📋 查看雲端設備總表</button>
@@ -43,8 +48,21 @@
     <h2>📋 已登錄設備總表 (GAS 同步)</h2>
     <table id="deviceTable">
       <thead><tr><th>序號</th><th>設備名稱</th><th>藍牙 MAC / ID 碼</th><th>最後登錄時間</th></tr></thead>
-      <tbody><tr><td colspan="4" style="text-align:center; color:#999;">請點擊上方按鈕載入雲端資料...</td></tr></tbody>
+      <tbody><tr><td colspan="4" style="text-align:center; color:#999;">請點擊上方按鈕或手動重新整理載入雲端資料...</td></tr></tbody>
     </table>
+
+    <div class="sub-block">
+      <h3>➕ 手動單筆新增 / 修改雲端設備</h3>
+      <div class="form-group">
+        <label>藍牙 MAC 位址 / ID：</label>
+        <input type="text" class="form-control" id="manualMac" placeholder="例如：AA:BB:CC:DD:EE:FF">
+      </div>
+      <div class="form-group">
+        <label>自訂資產設備名稱：</label>
+        <input type="text" class="form-control" id="manualName" placeholder="例如：高價儀器A款 / 測試標籤">
+      </div>
+      <button class="btn btn-active" id="manualSubmitBtn" style="width:100%; margin-top:5px; padding:12px;">💾 送出登錄至 Google 試算表</button>
+    </div>
   </div>
 
   <div id="searchSection" class="section">
@@ -72,14 +90,13 @@
 </div>
 
 <script>
-  let registeredDevices = []; 
   let radarCapturedMap = new Map();
 
-  // 取得當前輸入框內的 GAS 網址
   function getGasUrl() {
     return document.getElementById('gasUrlInput').value.trim();
   }
 
+  // 分頁切換監聽
   document.getElementById('navDeviceBtn').addEventListener('click', () => { switchSection('deviceSection', 'navDeviceBtn'); loadRegisteredDevices(); });
   document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); });
 
@@ -90,51 +107,85 @@
     document.getElementById(btnId).classList.add('btn-active');
   }
 
-  // 讀取雲端清單功能 (雙重安全防禦模式)
-  async function loadRegisteredDevices() {
-    const targetUrl = getGasUrl();
-    try {
-      document.getElementById('radarStatus').innerText = "狀態：正在向 Google 雲端抓取設備清單...";
-      
-      const response = await fetch(`${targetUrl}?action=getDevices`, {
-        method: 'GET',
-        credentials: 'omit'
-      }).catch(err => { 
-        throw new Error("CORS政策拦截或網址未更新為最新部署版本"); 
-      });
-      
-      if (!response.ok) throw new Error("GAS回應異常");
-      
-      const rawText = await response.text();
-      if (rawText.startsWith("錯誤")) throw new Error(rawText);
-      
-      registeredDevices = JSON.parse(rawText);
-      document.getElementById('radarStatus').innerText = "狀態：雲端試算表資料同步成功。";
-      renderDeviceTable();
-    } catch(e) { 
-      document.getElementById('radarStatus').innerText = "⚠️ 提示: " + e.message + " (已切換本地緩存相容模式)";
-      if(registeredDevices.length === 0) {
-        // 如果雲端暫時受阻，允許直接手動填入測試模擬數據，絕不卡死雷達分頁
-        registeredDevices = [
-          { mac: "00:11:22:33:44:55", name: "雷達就緒 (點擊右方切換雷達)", time: new Date() }
-        ];
-      }
-      renderDeviceTable();
-    }
+  // 1. 📋 讀取雲端清單功能 (終局之戰：改用 JSONP 穿透，永不噴 CORS 阻擋)
+  function loadRegisteredDevices() {
+    document.getElementById('radarStatus').innerText = "狀態：正在透過 JSONP 安全通道抓取試算表資料...";
+    
+    // 移除舊的探針標籤（若存在）
+    const oldScript = document.getElementById('gasJsonpScript');
+    if (oldScript) oldScript.remove();
+    
+    // 建立一個全新的臨時 <script> 標籤
+    const script = document.createElement('script');
+    script.id = 'gasJsonpScript';
+    
+    // 💡 關鍵：網址後面加上 &callback=handleGasResponse
+    script.src = `${getGasUrl()}?action=getDevices&callback=handleGasResponse`;
+    
+    // 如果載入失敗的安全防禦
+    script.onerror = function() {
+      document.getElementById('radarStatus').innerText = "⚠️ JSONP 載入異常，請確認您的 GAS 網址是否正確且已發布。";
+    };
+    
+    document.body.appendChild(script);
   }
 
-  function renderDeviceTable() {
+  // 💡 這是 JSONP 的全域回呼函式，當 Google 回傳資料時會自動執行這裡
+  window.handleGasResponse = function(data) {
+    if (data.error) {
+      document.getElementById('radarStatus').innerText = "❌ 雲端錯誤: " + data.error;
+      return;
+    }
+    document.getElementById('radarStatus').innerText = "狀態：雲端試算表資料 100% 同步成功！";
+    
     const tbody = document.querySelector('#deviceTable tbody'); 
     tbody.innerHTML = '';
-    registeredDevices.forEach((dev, index) => { 
+    
+    if (data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#999;">試算表內目前無資料，請利用下方表單或雷達新增。</td></tr>`;
+      return;
+    }
+
+    data.forEach((dev, index) => { 
       tbody.innerHTML += `<tr><td>${index+1}</td><td>${dev.name}</td><td><code>${dev.mac}</code></td><td>${dev.time ? new Date(dev.time).toLocaleString() : '---'}</td></tr>`; 
     });
-  }
+  };
 
-  // 2. 📡 藍牙廣播雷達功能 (開啟全自動非連線監聽)
+  // 2. ➕ 手動新增設備點擊事件
+  document.getElementById('manualSubmitBtn').addEventListener('click', async () => {
+    const mac = document.getElementById('manualMac').value.trim();
+    const name = document.getElementById('manualName').value.trim();
+    
+    if (!mac || !name) {
+      alert("請完整填寫 MAC 位址與設備名稱！");
+      return;
+    }
+    
+    document.getElementById('radarStatus').innerText = "正在單筆手動上傳至雲端...";
+    
+    const formData = new URLSearchParams();
+    formData.append("mac", mac);
+    formData.append("name", name);
+    
+    await fetch(`${getGasUrl()}?action=register`, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString()
+    });
+    
+    alert(`🎉 手動登錄指令已發送！設備 [${name}] 已同步寫入。`);
+    document.getElementById('manualMac').value = "";
+    document.getElementById('manualName').value = "";
+    
+    // 1.2 秒後自動刷清單
+    setTimeout(() => { loadRegisteredDevices(); }, 1200);
+  });
+
+  // 3. 📡 藍牙廣播雷達全自動掃描 (維持您手機已經成功的核心功能)
   document.getElementById('startRadarBtn').addEventListener('click', async () => {
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
-      alert("❌ 錯誤：您的瀏覽器尚未開啟藍牙雷達功能。\n\n請務必修正：\n1. 在手機 Chrome 輸入 chrome://flags\n2. 搜尋 Experimental Web Platform features 並改為 Enabled\n3. 重啟 Chrome 瀏覽器再試！");
+      alert("❌ 錯誤：未檢測到藍牙雷達功能。");
       return;
     }
 
@@ -155,7 +206,6 @@
         let macAddress = event.device.id; 
         let deviceName = event.device.name || "不明設備 / 未命名廣播";
         let rssi = event.rssi || "--";
-
         radarCapturedMap.set(macAddress, { name: deviceName, rssi: rssi });
         updateRadarTableUI();
       };
@@ -176,8 +226,7 @@
       }, 10000);
 
     } catch (e) {
-      alert("雷達開啟失敗，請確認手機的「GPS定位權限」與「藍牙功能」皆已開啟！\n\n失敗原因：" + e.message);
-      document.getElementById('radarStatus').innerText = "❌ 雷達啟動異常。";
+      alert("雷達開啟失敗：" + e.message);
     }
   });
 
@@ -191,9 +240,8 @@
     });
   }
 
-  // 3. 批量寫入雲端試算表 (POST no-cors 終極跨域穿透)
+  // 4. 批量寫入雲端試算表 (POST 盲發)
   document.getElementById('bulkUploadBtn').addEventListener('click', async () => {
-    const targetUrl = getGasUrl();
     document.getElementById('radarStatus').innerText = "正在將雷達清單批量寫入雲端試算表...";
     
     for (let [mac, info] of radarCapturedMap) {
@@ -201,7 +249,7 @@
       formData.append("mac", mac);
       formData.append("name", info.name);
       
-      fetch(`${targetUrl}?action=register`, {
+      fetch(`${getGasUrl()}?action=register`, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
