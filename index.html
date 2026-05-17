@@ -27,13 +27,31 @@
     #map { width: 100%; height: 350px; border-radius: 12px; margin-top: 12px; border: 1px solid #ccc; }
     .config-input { padding: 6px; font-size: 13px; width: 50px; text-align: center; border-radius: 4px; border: 1px solid #ccc; }
     .edit-input { width: 90%; padding: 4px; font-size: 12px; border: 1px solid #bbb; border-radius: 4px; }
+
+    /* ==================== 🖨️ CSS 友善列印與橫向 PDF 控制引擎 ==================== */
+    @media print {
+      @page { size: landscape; margin: 1cm; }
+      body { background: white; color: black; padding: 0; }
+      .container { box-shadow: none; max-width: 100%; padding: 0; }
+      h1, .nav-bar, .filter-box, #map, #deviceSection, #printBtn, h3 { display: none !important; }
+      #searchSection { display: block !important; }
+      table { width: 100%; border: 2px solid #000; font-size: 13px; margin-top: 0; }
+      th, td { border: 1px solid #000 !important; padding: 8px !important; background: transparent !important; color: #000 !important; }
+      th { background-color: #f2f2f2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .row-absent { background-color: #f9f9f9 !important; color: #777 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .summary-box { border: 1px solid #000 !important; background: #fff !important; color: #000 !important; margin-top: 15px; font-size: 14px; }
+      #searchSection::before {
+        content: "🏗️ 施工機具追蹤系統 - 現場清點即時位置報表";
+        display: block; text-align: center; font-size: 20px; font-weight: bold; color: #000; margin-bottom: 20px;
+      }
+    }
   </style>
 </head>
 <body>
 <div class="container">
   <h1>🏗️ 施工機具追蹤系統</h1>
   
-  <div class="status-bar" id="systemStatus">系統狀態：控制台初始化中...</div>
+  <div class="status-bar" id="systemStatus">系統狀態：控制台載入名冊中...</div>
   
   <div class="nav-bar">
     <button class="btn btn-active" id="navDeviceBtn">📋 查詢登錄設備</button>
@@ -81,7 +99,11 @@
       <select id="projFilterLive" onchange="filterLiveTable()"><option value="ALL">顯示全部專案</option></select>
     </div>
 
-    <h3>設備位置清單</h3>
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <h3>📍 設備位置清單</h3>
+      <button class="btn" id="printBtn" onclick="window.print()" style="background: #28a745; max-width: 120px; padding: 6px 12px; font-size: 13px;">🖨️ 友善列印</button>
+    </div>
+    
     <table id="liveTable">
       <thead>
         <tr><th>序號</th><th>設備名稱</th><th>專案編號</th><th>設備編號</th><th>位置資訊</th><th>距離</th><th>定位時間</th></tr>
@@ -97,7 +119,7 @@
 </div>
 
 <script>
-  // 💡 請在此處更換為您部署後的最新 GAS 網址
+  // 💡 請在此處更換為您發布新版本後的最新 GAS 網址
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxleCZ7WmEhgxE0eh9yY9pjKTIhEajVByyQyYNNm2GNI5gmXuiS9nG9QAm7Vno4G0Bb/exec";
   
   let masterDevices = []; 
@@ -112,9 +134,10 @@
     return `${d.getFullYear()}/${("0"+(d.getMonth()+1)).slice(-2)}/${("0"+d.getDate()).slice(-2)} ${("0"+d.getHours()).slice(-2)}:${("0"+d.getMinutes()).slice(-2)}:${("0"+d.getSeconds()).slice(-2)}`;
   }
 
-  // 綁定導覽按鈕
+  // 綁定導覽切換與手動查詢按鈕
   document.getElementById('navDeviceBtn').addEventListener('click', () => { switchSection('deviceSection', 'navDeviceBtn'); loadRegisteredDevices(); });
   document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); initLeafletMap(); loadLiveStatusAndScan(); startAutoTimer(); });
+  document.getElementById('manualQueryLocationBtn').addEventListener('click', () => { loadLiveStatusAndScan(); });
 
   function switchSection(sectId, btnId) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('section-active'));
@@ -151,7 +174,7 @@
     document.getElementById('systemStatus').innerText = "系統狀態：雲端名冊同步完成。";
   }
 
-  // ==================== ➕ 15秒雷達點名（預設不勾選、鎖定不清除） ====================
+  // ==================== ➕ 15秒大雷達監聽鎖定 ====================
   document.getElementById('showBleScanBlockBtn').addEventListener('click', async () => {
     document.getElementById('bleScanBlock').style.display = "block";
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
@@ -171,9 +194,7 @@
         if (rawName.includes('#')) {
           let parts = rawName.split('#');
           if (parts.length >= 3) {
-            let dName = parts[0].trim();
-            let pId = parts[1].trim();
-            let eId = parts[2].trim();
+            let dName = parts[0].trim(); let pId = parts[1].trim(); let eId = parts[2].trim();
             let compositeKey = `${dName}_${pId}_${eId}_${tempId}`;
             if(!radarCapturedMap.has(compositeKey)) {
               radarCapturedMap.set(compositeKey, { name: dName, proj: pId, dev: eId, tempId: tempId });
@@ -253,7 +274,7 @@
       document.getElementById('bleScanBlock').style.display = "none";
       document.getElementById('submitRegisterBtn').style.display = "none";
       loadRegisteredDevices();
-    }, (err) => { alert("寫入失敗：未取得定位授權。"); }, { enableHighAccuracy: true });
+    }, (err) => { alert("寫入失敗：未取得手機定位授權。"); }, { enableHighAccuracy: true });
   });
 
   function executeJsonpWrite(url) {
@@ -266,7 +287,7 @@
     });
   }
 
-  // ==================== 📍 位置常態聯合比對點名 ====================
+  // ==================== 📍 10秒現場常態雷達點名 ====================
   function loadLiveStatusAndScan() {
     document.getElementById('systemStatus').innerText = "點名狀態：正在提取歷史軌跡，同步開啟現場雷達點名...";
     const script = document.createElement('script');
@@ -294,7 +315,7 @@
           }
         };
         navigator.bluetooth.addEventListener('advertisementreceived', onLiveAdv);
-        await new Promise(r => setTimeout(r, 10000)); 
+        await new Promise(r => setTimeout(r, 10000)); // 💡 現場定時精準監聽點名 10 秒
         scan.stop();
         navigator.bluetooth.removeEventListener('advertisementreceived', onLiveAdv);
       } catch(err) { console.log("現場雷達未響應"); }
@@ -311,9 +332,7 @@
     let filterProj = document.getElementById('projFilterLive').value;
     let nearCount = 0; let farCount = 0;
     
-    if (mapInstance) {
-      mapMarkers.forEach(m => mapInstance.removeLayer(m));
-    }
+    if (mapInstance) { mapMarkers.forEach(m => mapInstance.removeLayer(m)); }
     mapMarkers = [];
     
     const tbody = document.querySelector('#liveTable tbody'); 
@@ -328,33 +347,27 @@
       
       let rowClass = isPresent ? "" : "row-absent";
       let pinColor = isPresent ? "orange" : "gray";
-      let displayLoc = dev.loc;
-      let displayDist = dev.dist;
-      let displayTime = dev.time;
+      let displayLoc = dev.loc; let displayDist = dev.dist; let displayTime = dev.time;
 
       if (isPresent) {
         nearCount++;
         let rssi = localSeenCompositeKeys.get(searchKey);
         let calcDist = Math.pow(10, (-69 - rssi) / (10 * 2)).toFixed(1) + "m";
-        displayDist = calcDist;
-        displayTime = getNowStr(); 
+        displayDist = calcDist; displayTime = getNowStr(); 
         
         if (currentLat && currentLng) {
           displayLoc = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
           fetch(`${GAS_API_URL}?action=updateLocation&name=${encodeURIComponent(dev.name)}&proj=${encodeURIComponent(dev.proj)}&dev=${encodeURIComponent(dev.dev)}&lat=${currentLat}&lng=${currentLng}&distance=${calcDist}`, { mode: 'no-cors' });
         }
-      } else {
-        farCount++;
-      }
+      } else { farCount++; }
 
       tbody.innerHTML += `<tr class="${rowClass}"><td>${seq}</td><td><b>${dev.name}</b></td><td>${dev.proj}</td><td>${dev.dev}</td><td>📍 ${displayLoc}</td><td>${displayDist}</td><td>⏱️ ${displayTime}</td></tr>`;
 
-      // 💡 核心安全修正：加入 pts.length === 2 安全防禦，徹底阻止「無定位」等歷史文字卡死初始化！
+      // 💡 內嵌防禦型安全坐標拆解結構 (確保髒資料不卡死渲染)
       if (mapInstance && displayLoc && displayLoc.includes(',')) {
         let pts = displayLoc.split(',');
         if (pts.length === 2) {
-          let lLat = parseFloat(pts[0]); 
-          let lLng = parseFloat(pts[1]);
+          let lLat = parseFloat(pts[0]); let lLng = parseFloat(pts[1]);
           if (!isNaN(lLat) && !isNaN(lLng)) {
             let markerHtmlStyles = `background-color: ${pinColor}; width: 24px; height: 24px; display: block; left: -12px; top: -12px; position: relative; border-radius: 24px 24px 0; transform: rotate(-45deg); border: 1px solid #FFFFFF; color:white; text-align:center; font-size:11px; line-height:24px; font-weight:bold;`;
             let customIcon = L.divIcon({ className: "custom-pin", iconAnchor: [0, 24], html: `<span style="${markerHtmlStyles}"><span style="transform: rotate(45deg); display:inline-block;">${seq}</span></span>` });
@@ -374,7 +387,7 @@
   function initLeafletMap() {
     if (mapInstance) return;
     mapInstance = L.map('map').setView([23.95, 121.56], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(mapInstance);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(mapInstance);
   }
 
   function updateFilterOptions(elementId, list) {
@@ -387,6 +400,9 @@
     });
     select.value = currentVal;
   }
+
+  function filterMasterTable() { renderMasterTable(document.getElementById('projFilterMaster').value); }
+  function filterLiveTable() { if(liveStatusDevices.length > 0) renderLiveLocationUI(null, null, new Map()); }
 
   function startAutoTimer() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
