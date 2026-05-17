@@ -267,8 +267,6 @@
   }
 
   // ==================== 📍 位置常態聯合比對點名 ====================
-  document.getElementById('manualQueryLocationBtn').addEventListener('click', () => { loadLiveStatusAndScan(); });
-
   function loadLiveStatusAndScan() {
     document.getElementById('systemStatus').innerText = "點名狀態：正在提取歷史軌跡，同步開啟現場雷達點名...";
     const script = document.createElement('script');
@@ -351,10 +349,50 @@
 
       tbody.innerHTML += `<tr class="${rowClass}"><td>${seq}</td><td><b>${dev.name}</b></td><td>${dev.proj}</td><td>${dev.dev}</td><td>📍 ${displayLoc}</td><td>${displayDist}</td><td>⏱️ ${displayTime}</td></tr>`;
 
+      // 💡 核心安全修正：加入 pts.length === 2 安全防禦，徹底阻止「無定位」等歷史文字卡死初始化！
       if (mapInstance && displayLoc && displayLoc.includes(',')) {
         let pts = displayLoc.split(',');
-        let lLat = parseFloat(pts[0]); let lLng = parseFloat(pts[1]);
-        if (!isNaN(lLat) && !isNaN(lLng)) {
-          let markerHtmlStyles = `background-color: ${pinColor}; width: 24px; height: 24px; display: block; left: -12px; top: -12px; position: relative; border-radius: 24px 24px 0; transform: rotate(-45deg); border: 1px solid #FFFFFF; color:white; text-align:center; font-size:11px; line-height:24px; font-weight:bold;`;
-          let customIcon = L.divIcon({ className: "custom-pin", iconAnchor: [0, 24], html: `<span style="${markerHtmlStyles}"><span style="transform: rotate(45deg); display:inline-block;">${seq}</span></span>` });
-          let marker = L.marker([lLat, lLng], {icon: customIcon}).
+        if (pts.length === 2) {
+          let lLat = parseFloat(pts[0]); 
+          let lLng = parseFloat(pts[1]);
+          if (!isNaN(lLat) && !isNaN(lLng)) {
+            let markerHtmlStyles = `background-color: ${pinColor}; width: 24px; height: 24px; display: block; left: -12px; top: -12px; position: relative; border-radius: 24px 24px 0; transform: rotate(-45deg); border: 1px solid #FFFFFF; color:white; text-align:center; font-size:11px; line-height:24px; font-weight:bold;`;
+            let customIcon = L.divIcon({ className: "custom-pin", iconAnchor: [0, 24], html: `<span style="${markerHtmlStyles}"><span style="transform: rotate(45deg); display:inline-block;">${seq}</span></span>` });
+            let marker = L.marker([lLat, lLng], {icon: customIcon}).addTo(mapInstance).bindPopup(`<b>[${seq}] ${dev.name}</b><br>專案: ${dev.proj}<br>現況: ${isPresent?'🟢 現場附近':'⚪ 離場'}`);
+            mapMarkers.push(marker);
+          }
+        }
+      }
+      seq++;
+    });
+
+    document.getElementById('summaryBox').innerHTML = `🟢 在附近的設備數量：${nearCount} 台 ｜ ⚪ 不在附近的設備數量：${farCount} 台`;
+    document.getElementById('systemStatus').innerText = "系統狀態：點名與開源地圖連動刷新完成。";
+    if(mapMarkers.length > 0 && mapInstance) mapInstance.fitBounds(new L.featureGroup(mapMarkers).getBounds().pad(0.1));
+  }
+
+  function initLeafletMap() {
+    if (mapInstance) return;
+    mapInstance = L.map('map').setView([23.95, 121.56], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(mapInstance);
+  }
+
+  function updateFilterOptions(elementId, list) {
+    const select = document.getElementById(elementId);
+    const currentVal = select.value; 
+    select.innerHTML = '<option value="ALL">顯示全部專案</option>';
+    const projs = [...new Set(list.map(d => d.proj).filter(Boolean))];
+    projs.forEach(p => { 
+      select.innerHTML += `<option value="${p}">${p}</option>`; 
+    });
+    select.value = currentVal;
+  }
+
+  function startAutoTimer() {
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+    let mins = parseFloat(document.getElementById('timerIntervalInput').value) || 5;
+    autoRefreshTimer = setInterval(() => { loadLiveStatusAndScan(); }, mins * 60 * 1000);
+  }
+</script>
+</body>
+</html>
