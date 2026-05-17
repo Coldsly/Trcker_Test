@@ -19,12 +19,20 @@
     th { background-color: #f1f3f5; color: #495057; }
     tr:nth-child(even) { background-color: #fafbfc; }
     .status-bar { font-size: 13px; color: #495057; background: #e9ecef; padding: 10px; border-radius: 6px; margin-bottom: 15px; line-height: 1.4; word-break: break-all; }
+    .config-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-size: 12px; }
+    .input-url { width: 95%; padding: 6px; font-size: 12px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; }
   </style>
 </head>
 <body>
 <div class="container">
   <h1>📡 V5 資產追蹤控制台</h1>
-  <div class="status-bar" id="radarStatus">系統狀態：控制台準備就緒。</div>
+  
+  <div class="config-box">
+    <strong>🔗 當前 GAS API 核心網址配置：</strong><br>
+    <input type="text" class="input-url" id="gasUrlInput" value="https://script.google.com/macros/s/AKfycbzxmX2_wgRs4Y9xzx6YhyrttYE63N3GUKG0iFqn5OZNV8g621ZKNW3mnhOyMr1X7kWz/exec">
+  </div>
+
+  <div class="status-bar" id="radarStatus">系統狀態：控制台準備就緒。請確保已開啟 chrome://flags 的實驗性藍牙雷達功能。</div>
   
   <div class="nav-bar">
     <button class="btn" id="navDeviceBtn">📋 查看雲端設備總表</button>
@@ -64,12 +72,14 @@
 </div>
 
 <script>
-  // ⚠️ 請務必將下方網址替換為您在「步驟二」複製的最新 GAS 網址
-  const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxleCZ7WmEhgxE0eh9yY9pjKTIhEajVByyQyYNNm2GNI5gmXuiS9nG9QAm7Vno4G0Bb/exec";
   let registeredDevices = []; 
   let radarCapturedMap = new Map();
 
-  // 分頁切換功能
+  // 取得當前輸入框內的 GAS 網址
+  function getGasUrl() {
+    return document.getElementById('gasUrlInput').value.trim();
+  }
+
   document.getElementById('navDeviceBtn').addEventListener('click', () => { switchSection('deviceSection', 'navDeviceBtn'); loadRegisteredDevices(); });
   document.getElementById('navSearchBtn').addEventListener('click', () => { switchSection('searchSection', 'navSearchBtn'); });
 
@@ -80,33 +90,33 @@
     document.getElementById(btnId).classList.add('btn-active');
   }
 
-  // 1. 讀取雲端清單功能 (改用 TEXT 模式防禦跨域阻擋)
+  // 讀取雲端清單功能 (雙重安全防禦模式)
   async function loadRegisteredDevices() {
+    const targetUrl = getGasUrl();
     try {
       document.getElementById('radarStatus').innerText = "狀態：正在向 Google 雲端抓取設備清單...";
       
-      const response = await fetch(`${GAS_API_URL}?action=getDevices`).catch(err => { 
-        throw new Error("網路連線受阻或被 CORS 政策攔截"); 
+      const response = await fetch(`${targetUrl}?action=getDevices`, {
+        method: 'GET',
+        credentials: 'omit'
+      }).catch(err => { 
+        throw new Error("CORS政策拦截或網址未更新為最新部署版本"); 
       });
       
-      if (!response.ok) throw new Error("GAS 伺服器未正確回應");
+      if (!response.ok) throw new Error("GAS回應異常");
       
-      // 💡 核心修正：先用純文字接收，再手動 parse 成 JSON，完美繞過轉址失敗
       const rawText = await response.text();
-      
-      // 檢查是否回傳了錯誤訊息
-      if (rawText.startsWith("錯誤")) {
-        throw new Error(rawText);
-      }
+      if (rawText.startsWith("錯誤")) throw new Error(rawText);
       
       registeredDevices = JSON.parse(rawText);
       document.getElementById('radarStatus').innerText = "狀態：雲端試算表資料同步成功。";
       renderDeviceTable();
     } catch(e) { 
-      document.getElementById('radarStatus').innerText = "⚠️ 雲端同步受阻 (" + e.message + ") 已啟用本地防禦模式";
+      document.getElementById('radarStatus').innerText = "⚠️ 提示: " + e.message + " (已切換本地緩存相容模式)";
       if(registeredDevices.length === 0) {
+        // 如果雲端暫時受阻，允許直接手動填入測試模擬數據，絕不卡死雷達分頁
         registeredDevices = [
-          { mac: "00:11:22:33:44:55", name: "無網路暫存設備範例", time: new Date() }
+          { mac: "00:11:22:33:44:55", name: "雷達就緒 (點擊右方切換雷達)", time: new Date() }
         ];
       }
       renderDeviceTable();
@@ -121,10 +131,10 @@
     });
   }
 
-  // 2. 📡 藍牙廣播雷達功能 (免點選配對、全自動倒數抓取)
+  // 2. 📡 藍牙廣播雷達功能 (開啟全自動非連線監聽)
   document.getElementById('startRadarBtn').addEventListener('click', async () => {
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
-      alert("❌ 錯誤：您的瀏覽器或設備不支援 Web Bluetooth 雷達掃描功能。\n\n請確保：\n1. 使用 Android 手機。\n2. 使用行動版 Chrome 瀏覽器。\n3. 網址開頭必須是安全的 https://");
+      alert("❌ 錯誤：您的瀏覽器尚未開啟藍牙雷達功能。\n\n請務必修正：\n1. 在手機 Chrome 輸入 chrome://flags\n2. 搜尋 Experimental Web Platform features 並改為 Enabled\n3. 重啟 Chrome 瀏覽器再試！");
       return;
     }
 
@@ -132,7 +142,6 @@
       radarCapturedMap.clear(); 
       document.getElementById('radarStatus').innerText = "雷達狀態：正在初始化監聽器...";
       
-      // 開啟全周邊雷達掃描
       const scan = await navigator.bluetooth.requestLEScan({
         acceptAllAdvertisements: true,
         keepRepeatedDevices: true
@@ -142,7 +151,6 @@
       document.getElementById('startRadarBtn').disabled = true;
       document.getElementById('startRadarBtn').innerText = "⚡ 雷達監聽中...";
 
-      // 當周邊任何藍牙發射廣播包，此事件會全自動秒級觸發，完全免人工點選
       const advertisementCallback = (event) => {
         let macAddress = event.device.id; 
         let deviceName = event.device.name || "不明設備 / 未命名廣播";
@@ -154,8 +162,18 @@
 
       navigator.bluetooth.addEventListener('advertisementreceived', advertisementCallback);
 
-      // 10000 毫秒 (10秒) 後自動收線
-      激發計時器(scan, advertisementCallback);
+      setTimeout(() => {
+        scan.stop(); 
+        navigator.bluetooth.removeEventListener('advertisementreceived', advertisementCallback);
+        
+        document.getElementById('startRadarBtn').disabled = false;
+        document.getElementById('startRadarBtn').innerText = "🔍 啟動藍牙雷達自動掃描 (10秒)";
+        document.getElementById('radarStatus').innerText = `雷達狀態：🛑 掃描完成！共自動抓取到 ${radarCapturedMap.size} 個設備。`;
+        
+        if(radarCapturedMap.size > 0) {
+          document.getElementById('bulkUploadBtn').style.display = "block";
+        }
+      }, 10000);
 
     } catch (e) {
       alert("雷達開啟失敗，請確認手機的「GPS定位權限」與「藍牙功能」皆已開啟！\n\n失敗原因：" + e.message);
@@ -163,41 +181,19 @@
     }
   });
 
-  function 激發計時器(scan, callback) {
-    setTimeout(() => {
-      scan.stop(); 
-      navigator.bluetooth.removeEventListener('advertisementreceived', callback);
-      
-      document.getElementById('startRadarBtn').disabled = false;
-      document.getElementById('startRadarBtn').innerText = "🔍 啟動藍牙雷達自動掃描 (10秒)";
-      document.getElementById('radarStatus').innerText = `雷達狀態：🛑 掃描完成！共自動抓取到 ${radarCapturedMap.size} 個設備。`;
-      
-      if(radarCapturedMap.size > 0) {
-        document.getElementById('bulkUploadBtn').style.display = "block";
-      }
-    }, 10000); // 確保數值純淨，不含任何中文字元
-  }
-
   function updateRadarTableUI() {
     const tbody = document.querySelector('#radarResultTable tbody');
     tbody.innerHTML = '';
-    
     let index = 1;
     radarCapturedMap.forEach((info, mac) => {
-      tbody.innerHTML += `
-        <tr>
-          <td>${index}</td>
-          <td><code>${mac}</code></td>
-          <td>${info.name}</td>
-          <td>${info.rssi} dBm</td>
-        </tr>
-      `;
+      tbody.innerHTML += `<tr><td>${index}</td><td><code>${mac}</code></td><td>${info.name}</td><td>${info.rssi} dBm</td></tr>`;
       index++;
     });
   }
 
-  // 3. 批量寫入雲端試算表 (POST no-cors 穿透模式)
+  // 3. 批量寫入雲端試算表 (POST no-cors 終極跨域穿透)
   document.getElementById('bulkUploadBtn').addEventListener('click', async () => {
+    const targetUrl = getGasUrl();
     document.getElementById('radarStatus').innerText = "正在將雷達清單批量寫入雲端試算表...";
     
     for (let [mac, info] of radarCapturedMap) {
@@ -205,7 +201,7 @@
       formData.append("mac", mac);
       formData.append("name", info.name);
       
-      fetch(`${GAS_API_URL}?action=register`, {
+      fetch(`${targetUrl}?action=register`, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -215,7 +211,6 @@
 
     alert(`🎉 成功！已將 ${radarCapturedMap.size} 筆自動抓取的藍牙資訊發送至雲端試算表！`);
     document.getElementById('bulkUploadBtn').style.display = "none";
-    
     setTimeout(() => { loadRegisteredDevices(); }, 1500);
   });
 </script>
